@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -82,7 +83,6 @@ fun EventDetailScreen(
 
     val eventWithNodes by vm.event.collectAsStateWithLifecycle()
     val ew = eventWithNodes
-
     var showDelete by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -111,7 +111,8 @@ fun EventDetailScreen(
                             Icon(Icons.Filled.Delete, contentDescription = "删除")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
@@ -132,11 +133,19 @@ fun EventDetailScreen(
             HeaderCard(name = event.name, dateMillis = event.date, imagePath = event.imagePath)
 
             if (event.description.isNotBlank()) {
-                Text(
-                    text = event.description,
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyLarge
-                )
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Text(
+                        text = event.description,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
 
             TimelineSection(
@@ -185,7 +194,6 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
     val days = DateUtils.countdownDays(dateMillis)
 
     val hasImage = !imagePath.isNullOrEmpty()
-    // 加载前默认按横版处理，加载成功后按真实方向自适应
     var orientation by remember(imagePath) {
         mutableStateOf(if (hasImage) ImageOrientation.LANDSCAPE else ImageOrientation.NONE)
     }
@@ -206,13 +214,14 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
     )
     val overlay = Brush.verticalGradient(
         0f to Color.Transparent,
-        1f to Color.Black.copy(alpha = 0.55f)
+        0.5f to Color.Black.copy(alpha = 0.15f),
+        1f to Color.Black.copy(alpha = 0.65f)
     )
 
     when (orientation) {
         ImageOrientation.PORTRAIT -> {
             // 竖版：图片在左，信息在右
-            Row(Modifier.fillMaxWidth().height(220.dp)) {
+            Row(Modifier.fillMaxWidth().height(240.dp)) {
                 Image(
                     painter = painter,
                     contentDescription = null,
@@ -229,7 +238,7 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
                         isToday = isToday,
                         isFuture = isFuture,
                         days = days,
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(20.dp)
                     )
                 }
             }
@@ -239,17 +248,17 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
             // 方框：顶部居中显示
             Column(Modifier.fillMaxWidth()) {
                 Box(
-                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         painter = painter,
                         contentDescription = null,
-                        modifier = Modifier.size(180.dp).clip(RoundedCornerShape(0.dp)),
+                        modifier = Modifier.size(200.dp),
                         contentScale = ContentScale.Crop
                     )
                 }
-                Box(Modifier.fillMaxWidth().background(gradient).padding(16.dp)) {
+                Box(Modifier.fillMaxWidth().background(gradient).padding(20.dp)) {
                     HeaderInfo(
                         name = name,
                         dateMillis = dateMillis,
@@ -266,7 +275,7 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (hasImage) 240.dp else 180.dp)
+                    .height(if (hasImage) 260.dp else 200.dp)
             ) {
                 if (hasImage) {
                     Image(
@@ -285,7 +294,7 @@ private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
                     isToday = isToday,
                     isFuture = isFuture,
                     days = days,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)
+                    modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
                 )
             }
         }
@@ -304,16 +313,17 @@ private fun HeaderInfo(
     Column(modifier) {
         Text(
             text = name,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = Color.White
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = DateUtils.formatDateWithWeek(dateMillis),
-            color = Color.White.copy(alpha = 0.9f)
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White.copy(alpha = 0.92f)
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = if (isToday) "今" else days.toString(),
@@ -321,15 +331,16 @@ private fun HeaderInfo(
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
             Text(
                 text = when {
                     isToday -> "就是今天"
                     isFuture -> "天后"
                     else -> "天前"
                 },
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.padding(bottom = 14.dp)
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White.copy(alpha = 0.92f),
+                modifier = Modifier.padding(bottom = 16.dp)
             )
         }
     }
@@ -344,7 +355,7 @@ private fun TimelineSection(
 ) {
     var showAdd by remember { mutableStateOf(false) }
 
-    Column(Modifier.padding(16.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "时间线",
@@ -357,14 +368,21 @@ private fun TimelineSection(
                 Text("添加")
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
         if (nodes.isEmpty()) {
-            Text(
-                "暂无时间线节点，添加一个记录重要时刻吧",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Text(
+                    "暂无时间线节点，添加一个记录重要时刻吧",
+                    modifier = Modifier.padding(20.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         } else {
             // 用竖线把各节点串联起来
             Column(Modifier.fillMaxWidth()) {
@@ -398,7 +416,7 @@ private fun TimelineRow(
     isLast: Boolean,
     onDelete: () -> Unit
 ) {
-    val lineColor = MaterialTheme.colorScheme.outline
+    val lineColor = MaterialTheme.colorScheme.outlineVariant
     val dotColor = MaterialTheme.colorScheme.primary
 
     Row(
@@ -413,20 +431,31 @@ private fun TimelineRow(
                 modifier = Modifier.fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 上半段竖线（首个节点不画，避免伸到顶）
+                // 上半段竖线（首个节点不画）
                 Box(
                     Modifier
                         .width(2.dp)
                         .weight(1f)
                         .background(if (isFirst) Color.Transparent else lineColor)
                 )
-                // 节点圆点
+                // 节点圆点（带外环，更精致）
                 Box(
-                    Modifier
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .background(dotColor)
-                )
+                    Modifier.size(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(dotColor.copy(alpha = 0.25f))
+                    )
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+                }
                 // 下半段竖线（末个节点不画）
                 Box(
                     Modifier
@@ -442,12 +471,11 @@ private fun TimelineRow(
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 4.dp, bottom = 12.dp),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 1.dp
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             Row(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -458,7 +486,12 @@ private fun TimelineRow(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(node.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        node.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         DateUtils.formatDateTime(node.time),
                         style = MaterialTheme.typography.bodySmall,
@@ -503,7 +536,8 @@ private fun AddNodeDialog(
                     onValueChange = { name = it },
                     label = { Text("名称") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
                 )
                 FilledTonalButton(
                     onClick = { showDate = true },

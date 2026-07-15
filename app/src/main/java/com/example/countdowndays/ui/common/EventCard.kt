@@ -1,6 +1,8 @@
 package com.example.countdowndays.ui.common
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,10 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,27 +55,31 @@ fun EventCard(
     val days = DateUtils.countdownDays(event.date)
     var menuOpen by remember { mutableStateOf(false) }
 
-    ElevatedCard(
+    Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 8.dp),
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 缩略图：圆角方框
             if (!event.imagePath.isNullOrEmpty()) {
-                androidx.compose.foundation.Image(
+                Image(
                     painter = rememberAsyncImagePainter(File(event.imagePath)),
                     contentDescription = null,
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)),
                     contentScale = ContentScale.Crop
                 )
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(16.dp))
             }
 
+            // 名称 + 日期 + 描述
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (event.isPinned) {
@@ -81,18 +87,19 @@ fun EventCard(
                             Icons.Filled.PushPin,
                             contentDescription = "已置顶",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
                         text = event.name,
                         style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(Modifier.size(4.dp))
+                Spacer(Modifier.size(2.dp))
                 Text(
                     text = DateUtils.formatDate(event.date),
                     style = MaterialTheme.typography.bodySmall,
@@ -110,17 +117,25 @@ fun EventCard(
             }
 
             Spacer(Modifier.width(12.dp))
+
+            // 倒数天数：大数字 + 小标签
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(
-                    text = if (isToday) "今" else days.toString(),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isToday) MaterialTheme.colorScheme.tertiary
-                    else MaterialTheme.colorScheme.primary
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .padding(horizontal = 0.dp)
+                ) {
+                    Text(
+                        text = if (isToday) "今" else days.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isToday) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.primary
+                    )
+                }
                 Text(
                     text = when {
                         isToday -> "就是今天"
@@ -133,7 +148,11 @@ fun EventCard(
             }
 
             IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "更多",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
