@@ -4,56 +4,41 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 治愈系像素小猫：圆脸 + 尖耳 + 闭眼笑 + 腮红，全部由方块拼成 -->
+    <!-- 治愈系简单像素小太阳，居中绘制于 108x108 安全区内 -->
 
-    <!-- 左耳（米色外 + 粉内） -->
-    <path android:fillColor="#FFD4A574" android:pathData="M40,30 h8 v4 h-8 z" />
-    <path android:fillColor="#FFD4A574" android:pathData="M38,34 h4 v4 h-4 z" />
-    <path android:fillColor="#FFD4A574" android:pathData="M40,26 h6 v4 h-6 z" />
-    <path android:fillColor="#FFFFAB91" android:pathData="M40,38 h4 v2 h-4 z" />
-    <path android:fillColor="#FFFFAB91" android:pathData="M38,36 h2 v2 h-2 z" />
+    <!-- 8 道光芒（暖橙像素方块），围绕中心 54,54 分布 -->
+    <path android:fillColor="#FFFFB74D" android:pathData="M51,28 h6 v8 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M51,72 h6 v8 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M28,51 h8 v6 h-8 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M72,51 h8 v6 h-8 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M36,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M66,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M36,66 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M66,66 h6 v6 h-6 z" />
 
-    <!-- 右耳（米色外 + 粉内） -->
-    <path android:fillColor="#FFD4A574" android:pathData="M60,30 h8 v4 h-8 z" />
-    <path android:fillColor="#FFD4A574" android:pathData="M66,34 h4 v4 h-4 z" />
-    <path android:fillColor="#FFD4A574" android:pathData="M62,26 h6 v4 h-6 z" />
-    <path android:fillColor="#FFFFAB91" android:pathData="M64,38 h4 v2 h-4 z" />
-    <path android:fillColor="#FFFFAB91" android:pathData="M68,36 h2 v2 h-2 z" />
-
-    <!-- 脸庞（米色方块组） -->
-    <path android:fillColor="#FFE8C99B" android:pathData="M38,42 h32 v4 h-32 z" />
-    <path android:fillColor="#FFE8C99B" android:pathData="M36,46 h36 v16 h-36 z" />
-    <path android:fillColor="#FFE8C99B" android:pathData="M38,62 h32 v4 h-32 z" />
-
-    <!-- 头顶花纹（深米色，像素条纹） -->
-    <path android:fillColor="#FFD4A574" android:pathData="M48,46 h4 v4 h-4 z" />
-    <path android:fillColor="#FFD4A574" android:pathData="M56,46 h4 v4 h-4 z" />
+    <!-- 太阳脸庞（暖黄圆，居中） -->
+    <path android:fillColor="#FFFFD54F"
+        android:pathData="M54,38 a16,16 0 1,0 0.01,0 z" />
 
     <!-- 腮红（粉） -->
-    <path android:fillColor="#FFFFAB91" android:pathData="M40,54 h4 v4 h-4 z" />
-    <path android:fillColor="#FFFFAB91" android:pathData="M64,54 h4 v4 h-4 z" />
+    <path android:fillColor="#FFFFAB91"
+        android:pathData="M43,58 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+    <path android:fillColor="#FFFFAB91"
+        android:pathData="M59,58 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
 
-    <!-- 眼睛（闭眼弯月，用像素块拼成 ^^ 形） -->
-    <path android:fillColor="#FF6D4C41" android:pathData="M46,52 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M44,50 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M48,50 h2 v2 h-2 z" />
+    <!-- 眼睛（闭眼弯月，治愈微笑感） -->
+    <path android:fillColor="#FF6D4C41"
+        android:pathData="M45,52 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+    <path android:fillColor="#FFFFD54F"
+        android:pathData="M45,51 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
 
-    <path android:fillColor="#FF6D4C41" android:pathData="M60,52 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M58,50 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M62,50 h2 v2 h-2 z" />
+    <path android:fillColor="#FF6D4C41"
+        android:pathData="M57,52 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+    <path android:fillColor="#FFFFD54F"
+        android:pathData="M57,51 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
 
-    <!-- 鼻子（粉色小方块） -->
-    <path android:fillColor="#FFEC9B8A" android:pathData="M53,56 h2 v2 h-2 z" />
-
-    <!-- 嘴巴（微笑，用像素拼成 W 形微笑） -->
-    <path android:fillColor="#FF6D4C41" android:pathData="M50,60 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M56,60 h2 v2 h-2 z" />
-    <path android:fillColor="#FF6D4C41" android:pathData="M52,58 h4 v2 h-4 z" />
-
-    <!-- 胡须（左侧，细像素线） -->
-    <path android:fillColor="#FFB8895F" android:pathData="M32,54 h4 v1 h-4 z" />
-    <path android:fillColor="#FFB8895F" android:pathData="M32,58 h4 v1 h-4 z" />
-    <!-- 胡须（右侧） -->
-    <path android:fillColor="#FFB8895F" android:pathData="M72,54 h4 v1 h-4 z" />
-    <path android:fillColor="#FFB8895F" android:pathData="M72,58 h4 v1 h-4 z" />
+    <!-- 微笑曲线 -->
+    <path android:fillColor="#00000000"
+        android:strokeColor="#FF6D4C41" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M48,60 Q54,65 60,60" />
 </vector>

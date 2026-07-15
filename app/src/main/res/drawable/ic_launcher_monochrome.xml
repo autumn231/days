@@ -4,16 +4,19 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 治愈系像素小猫单色剪影，用于 Android 13+ 主题图标，系统会自动着色 -->
+    <!-- 治愈系简单太阳单色剪影，用于 Android 13+ 主题图标，系统会自动着色 -->
 
-    <!-- 耳朵 -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M38,34 h4 v4 h-4 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M40,26 h6 v8 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M66,34 h4 v4 h-4 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M62,26 h6 v8 h-6 z" />
+    <!-- 光芒 -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M51,28 h6 v8 h-6 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M51,72 h6 v8 h-6 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M28,51 h8 v6 h-8 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M72,51 h8 v6 h-8 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M36,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M36,66 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,66 h6 v6 h-6 z" />
 
     <!-- 脸庞 -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M38,42 h32 v4 h-32 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M36,46 h36 v16 h-36 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M38,62 h32 v4 h-32 z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M54,38 a16,16 0 1,0 0.01,0 z" />
 </vector>
