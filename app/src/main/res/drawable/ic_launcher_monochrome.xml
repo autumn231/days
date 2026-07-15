@@ -4,12 +4,25 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 单色剪影，用于 Android 13+ 主题图标，系统会自动着色 -->
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M30,38 h48 a6,6 0 0 1 6,6 v38 a6,6 0 0 1 -6,6 h-48 a6,6 0 0 1 -6,-6 v-38 a6,6 0 0 1 6,-6 z" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.6"
-        android:fillColor="#00000000"
-        android:pathData="M54,57 m-11,0 a11,11 0 1,0 22,0 a11,11 0 1,0 -22,0" />
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M49.5,61 L58.5,61 L54,67.5 Z" />
+    <!-- 像素风格日历单色剪影，用于 Android 13+ 主题图标，系统会自动着色 -->
+
+    <!-- 装订环 -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M44,28 h4 v12 h-4 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M60,28 h4 v12 h-4 z" />
+
+    <!-- 日历主体 + 顶部横条（统一为剪影） -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M34,38 h40 v40 h-40 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M34,38 h40 v10 h-40 z" />
+
+    <!-- 日期像素点 -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M40,54 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M49,54 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M58,54 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M67,54 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M40,63 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M58,63 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M40,72 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M49,72 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M67,72 h5 v5 h-5 z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M58,72 h5 v5 h-5 z" />
 </vector>
