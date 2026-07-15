@@ -5,8 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,12 +54,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.example.countdowndays.data.TimelineNodeEntity
 import com.example.countdowndays.util.DateUtils
@@ -160,74 +165,172 @@ fun EventDetailScreen(
     }
 }
 
+/** 图片方向分类，用于自适应布局 */
+private enum class ImageOrientation { NONE, LANDSCAPE, PORTRAIT, SQUARE }
+
+private fun classifyOrientation(w: Int, h: Int): ImageOrientation {
+    if (w <= 0 || h <= 0) return ImageOrientation.LANDSCAPE
+    val ratio = w.toFloat() / h.toFloat()
+    return when {
+        ratio > 1.15f -> ImageOrientation.LANDSCAPE
+        ratio < 0.87f -> ImageOrientation.PORTRAIT
+        else -> ImageOrientation.SQUARE
+    }
+}
+
 @Composable
 private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
     val isToday = DateUtils.isToday(dateMillis)
     val isFuture = DateUtils.isFuture(dateMillis)
     val days = DateUtils.countdownDays(dateMillis)
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp)
-    ) {
-        if (!imagePath.isNullOrEmpty()) {
-            Image(
-                painter = rememberAsyncImagePainter(File(imagePath)),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.6f)
-                    )
+    val hasImage = !imagePath.isNullOrEmpty()
+    // 加载前默认按横版处理，加载成功后按真实方向自适应
+    var orientation by remember(imagePath) {
+        mutableStateOf(if (hasImage) ImageOrientation.LANDSCAPE else ImageOrientation.NONE)
+    }
+
+    val painter = rememberAsyncImagePainter(
+        model = if (hasImage) File(imagePath) else null,
+        onState = { state ->
+            if (state is AsyncImagePainter.State.Success) {
+                val d = state.result.drawable
+                orientation = classifyOrientation(d.intrinsicWidth, d.intrinsicHeight)
+            }
+        }
+    )
+
+    val gradient = Brush.verticalGradient(
+        0f to MaterialTheme.colorScheme.primary,
+        1f to MaterialTheme.colorScheme.tertiary
+    )
+    val overlay = Brush.verticalGradient(
+        0f to Color.Transparent,
+        1f to Color.Black.copy(alpha = 0.55f)
+    )
+
+    when (orientation) {
+        ImageOrientation.PORTRAIT -> {
+            // 竖版：图片在左，信息在右
+            Row(Modifier.fillMaxWidth().height(220.dp)) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.width(150.dp).fillMaxHeight(),
+                    contentScale = ContentScale.Crop
                 )
-            )
-        } else {
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0f to MaterialTheme.colorScheme.primary,
-                        1f to MaterialTheme.colorScheme.tertiary
+                Box(
+                    Modifier.weight(1f).fillMaxHeight().background(gradient),
+                    contentAlignment = Alignment.Center
+                ) {
+                    HeaderInfo(
+                        name = name,
+                        dateMillis = dateMillis,
+                        isToday = isToday,
+                        isFuture = isFuture,
+                        days = days,
+                        modifier = Modifier.padding(16.dp)
                     )
-                )
-            )
+                }
+            }
         }
 
-        Column(modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+        ImageOrientation.SQUARE -> {
+            // 方框：顶部居中显示
+            Column(Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painter,
+                        contentDescription = null,
+                        modifier = Modifier.size(180.dp).clip(RoundedCornerShape(0.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                Box(Modifier.fillMaxWidth().background(gradient).padding(16.dp)) {
+                    HeaderInfo(
+                        name = name,
+                        dateMillis = dateMillis,
+                        isToday = isToday,
+                        isFuture = isFuture,
+                        days = days
+                    )
+                }
+            }
+        }
+
+        else -> {
+            // 横版或无图：图片铺满顶部
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (hasImage) 240.dp else 180.dp)
+            ) {
+                if (hasImage) {
+                    Image(
+                        painter = painter,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(Modifier.fillMaxSize().background(overlay))
+                } else {
+                    Box(Modifier.fillMaxSize().background(gradient))
+                }
+                HeaderInfo(
+                    name = name,
+                    dateMillis = dateMillis,
+                    isToday = isToday,
+                    isFuture = isFuture,
+                    days = days,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderInfo(
+    name: String,
+    dateMillis: Long,
+    isToday: Boolean,
+    isFuture: Boolean,
+    days: Long,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = DateUtils.formatDateWithWeek(dateMillis),
+            color = Color.White.copy(alpha = 0.9f)
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = name,
-                style = MaterialTheme.typography.headlineMedium,
+                text = if (isToday) "今" else days.toString(),
+                style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
-                text = DateUtils.formatDateWithWeek(dateMillis),
-                color = Color.White.copy(alpha = 0.9f)
+                text = when {
+                    isToday -> "就是今天"
+                    isFuture -> "天后"
+                    else -> "天前"
+                },
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.padding(bottom = 14.dp)
             )
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = if (isToday) "今" else days.toString(),
-                    style = MaterialTheme.typography.displayLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = when {
-                        isToday -> "就是今天"
-                        isFuture -> "天后"
-                        else -> "天前"
-                    },
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.padding(bottom = 14.dp)
-                )
-            }
         }
     }
 }
@@ -263,42 +366,15 @@ private fun TimelineSection(
                 style = MaterialTheme.typography.bodyMedium
             )
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                nodes.forEach { node ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        tonalElevation = 1.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Filled.Schedule,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(node.name, style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    DateUtils.formatDateTime(node.time),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(onClick = { onDelete(node) }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = "删除节点",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+            // 用竖线把各节点串联起来
+            Column(Modifier.fillMaxWidth()) {
+                nodes.forEachIndexed { index, node ->
+                    TimelineRow(
+                        node = node,
+                        isFirst = index == 0,
+                        isLast = index == nodes.lastIndex,
+                        onDelete = { onDelete(node) }
+                    )
                 }
             }
         }
@@ -312,6 +388,92 @@ private fun TimelineSection(
                 showAdd = false
             }
         )
+    }
+}
+
+@Composable
+private fun TimelineRow(
+    node: TimelineNodeEntity,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onDelete: () -> Unit
+) {
+    val lineColor = MaterialTheme.colorScheme.outline
+    val dotColor = MaterialTheme.colorScheme.primary
+
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+    ) {
+        // 左侧轨道：竖线 + 圆点
+        Box(
+            modifier = Modifier.width(32.dp).fillMaxHeight(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 上半段竖线（首个节点不画，避免伸到顶）
+                Box(
+                    Modifier
+                        .width(2.dp)
+                        .weight(1f)
+                        .background(if (isFirst) Color.Transparent else lineColor)
+                )
+                // 节点圆点
+                Box(
+                    Modifier
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+                // 下半段竖线（末个节点不画）
+                Box(
+                    Modifier
+                        .width(2.dp)
+                        .weight(1f)
+                        .background(if (isLast) Color.Transparent else lineColor)
+                )
+            }
+        }
+
+        // 右侧内容卡片
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 4.dp, bottom = 12.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 1.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Schedule,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(node.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        DateUtils.formatDateTime(node.time),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "删除节点",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 

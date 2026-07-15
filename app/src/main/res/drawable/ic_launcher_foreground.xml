@@ -4,20 +4,36 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 像素风格太阳：核心方块 + 8 道光芒，全部由矩形拼成 -->
+    <!-- 治愈系太阳：圆润的暖黄脸庞 + 柔和短光芒 + 可爱笑脸 -->
 
-    <!-- 太阳核心（琥珀黄） -->
-    <path android:fillColor="#FFFFC107" android:pathData="M45,45 h18 v18 h-18 z" />
+    <!-- 柔和短光芒（暖橙） -->
+    <path android:fillColor="#FFFFB74D" android:pathData="M51,30 h6 v9 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M51,75 h6 v9 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M30,51 h9 v6 h-9 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M69,51 h9 v6 h-9 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M36,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M66,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M36,66 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFFB74D" android:pathData="M66,66 h6 v6 h-6 z" />
 
-    <!-- 四向光芒（橙） -->
-    <path android:fillColor="#FFFF8F00" android:pathData="M51,30 h6 v12 h-6 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M51,66 h6 v12 h-6 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M30,51 h12 v6 h-12 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M66,51 h12 v6 h-12 z" />
+    <!-- 太阳脸庞（暖黄，平滑圆） -->
+    <path android:fillColor="#FFFFD54F"
+        android:pathData="M40,56 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 z" />
 
-    <!-- 对角光芒（橙） -->
-    <path android:fillColor="#FFFF8F00" android:pathData="M39,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M63,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M39,66 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFF8F00" android:pathData="M63,66 h6 v6 h-6 z" />
+    <!-- 腮红（粉） -->
+    <path android:fillColor="#FFFFAB91"
+        android:pathData="M44,59 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0 z" />
+    <path android:fillColor="#FFFFAB91"
+        android:pathData="M58.8,59 a2.6,2.6 0 1,0 5.2,0 a2.6,2.6 0 1,0 -5.2,0 z" />
+
+    <!-- 眼睛（闭眼弯月，治愈感） -->
+    <path android:fillColor="#FF6D4C41"
+        android:pathData="M47,53 a2,2 0 1,1 4,0 a2.2,1.4 0 1,1 -4.4,0 z" />
+    <path android:fillColor="#FF6D4C41"
+        android:pathData="M57,53 a2,2 0 1,1 4,0 a2.2,1.4 0 1,1 -4.4,0 z" />
+
+    <!-- 微笑 -->
+    <path android:fillColor="#00000000"
+        android:strokeColor="#FF6D4C41" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M49,60 Q54,64 59,60" />
 </vector>

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
@@ -68,7 +68,7 @@ fun EventCard(
                 androidx.compose.foundation.Image(
                     painter = rememberAsyncImagePainter(File(event.imagePath)),
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp).clip(CircleShape),
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.width(14.dp))
