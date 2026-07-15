@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 关键：添加app命名空间 -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- 设置选项 -->
+    <item
+        android:id="@+id/action_settings"
+        android:title="设置"
+        android:orderInCategory="100"
+        app:showAsAction="never" />  <!-- 正确使用app命名空间 -->
+
+    <!-- 关于选项 -->
+    <item
+        android:id="@+id/action_about"
+        android:title="关于"
+        android:orderInCategory="101"
+        app:showAsAction="never" />  <!-- 正确使用app命名空间 -->
+
+</menu>

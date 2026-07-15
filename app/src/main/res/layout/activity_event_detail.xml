@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- 添加Toolbar -->
+        <androidx.appcompat.widget.Toolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorPrimary"
+            android:elevation="4dp"
+            android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+            app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+
+        <ImageView
+            android:id="@+id/event_image"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:scaleType="centerCrop"
+            android:src="@mipmap/ic_launcher"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:padding="16dp">
+
+            <Button
+                android:id="@+id/edit_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="编辑"
+                android:layout_marginRight="8dp"/>
+
+            <Button
+                android:id="@+id/delete_button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="删除"
+                android:layout_marginLeft="8dp"/>
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/event_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="事件名称"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:padding="16dp"
+            android:paddingBottom="8dp"/>
+
+        <TextView
+            android:id="@+id/event_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="日期"
+            android:textSize="18sp"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="16dp"/>
+
+        <TextView
+            android:id="@+id/event_days"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="剩余天数"
+            android:textSize="18sp"
+            android:textColor="@android:color/holo_red_dark"
+            android:padding="16dp"
+            android:paddingTop="0dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="事件详情"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="16dp"
+            android:paddingBottom="8dp"/>
+
+        <TextView
+            android:id="@+id/event_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="详情内容"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="16dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="时间脉络"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:padding="16dp"
+            android:paddingBottom="8dp"/>
+
+        <!-- 改为竖状显示的LinearLayout -->
+        <LinearLayout
+            android:id="@+id/timeline_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="16dp">
+            <!-- 动态添加时间节点 -->
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/edit_timeline_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="编辑时间脉络"
+            android:layout_margin="16dp"/>
+
+        <Button
+            android:id="@+id/save_timeline_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="保存时间脉络"
+            android:layout_margin="16dp"
+            android:visibility="gone"/>
+
+        <EditText
+            android:id="@+id/event_timeline"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="例如：计划中->准备中->进行中->完成"
+            android:minLines="2"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="16dp"
+            android:visibility="gone"/>
+
+    </LinearLayout>
+
+</ScrollView>
