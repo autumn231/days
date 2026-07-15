@@ -1,0 +1,404 @@
+package com.example.countdowndays.ui.detail
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.rememberAsyncImagePainter
+import com.example.countdowndays.data.TimelineNodeEntity
+import com.example.countdowndays.util.DateUtils
+import java.io.File
+import java.util.Calendar
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EventDetailScreen(
+    eventId: Long,
+    onBack: () -> Unit,
+    onEdit: (Long) -> Unit,
+    vm: EventDetailViewModel = com.example.countdowndays.ui.common.appViewModel {
+        EventDetailViewModel(it.repository)
+    }
+) {
+    LaunchedEffect(eventId) { vm.load(eventId) }
+
+    val eventWithNodes by vm.event.collectAsStateWithLifecycle()
+    val ew = eventWithNodes
+
+    var showDelete by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(ew?.event?.name ?: "事件详情") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    if (ew != null) {
+                        IconButton(onClick = { vm.togglePinned() }) {
+                            Icon(
+                                Icons.Filled.PushPin,
+                                contentDescription = if (ew.event.isPinned) "取消置顶" else "置顶",
+                                tint = if (ew.event.isPinned) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { onEdit(ew.event.id) }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "编辑")
+                        }
+                        IconButton(onClick = { showDelete = true }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "删除")
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        if (ew == null) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@Scaffold
+        }
+        val event = ew.event
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            HeaderCard(name = event.name, dateMillis = event.date, imagePath = event.imagePath)
+
+            if (event.description.isNotBlank()) {
+                Text(
+                    text = event.description,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            TimelineSection(
+                nodes = ew.nodes.sortedBy { it.time },
+                onAddNode = vm::addNode,
+                onDelete = vm::deleteNode
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("删除事件") },
+            text = { Text("确定删除该事件？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; vm.deleteEvent(onBack) }) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun HeaderCard(name: String, dateMillis: Long, imagePath: String?) {
+    val isToday = DateUtils.isToday(dateMillis)
+    val isFuture = DateUtils.isFuture(dateMillis)
+    val days = DateUtils.countdownDays(dateMillis)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(240.dp)
+    ) {
+        if (!imagePath.isNullOrEmpty()) {
+            Image(
+                painter = rememberAsyncImagePainter(File(imagePath)),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.6f)
+                    )
+                )
+            )
+        } else {
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to MaterialTheme.colorScheme.primary,
+                        1f to MaterialTheme.colorScheme.tertiary
+                    )
+                )
+            )
+        }
+
+        Column(modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = DateUtils.formatDateWithWeek(dateMillis),
+                color = Color.White.copy(alpha = 0.9f)
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = if (isToday) "今" else days.toString(),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = when {
+                        isToday -> "就是今天"
+                        isFuture -> "天后"
+                        else -> "天前"
+                    },
+                    color = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.padding(bottom = 14.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimelineSection(
+    nodes: List<TimelineNodeEntity>,
+    onAddNode: (String, Long) -> Unit,
+    onDelete: (TimelineNodeEntity) -> Unit
+) {
+    var showAdd by remember { mutableStateOf(false) }
+
+    Column(Modifier.padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "时间线",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            FilledTonalButton(onClick = { showAdd = true }) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("添加")
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (nodes.isEmpty()) {
+            Text(
+                "暂无时间线节点，添加一个记录重要时刻吧",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                nodes.forEach { node ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        tonalElevation = 1.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Filled.Schedule,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(node.name, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    DateUtils.formatDateTime(node.time),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = { onDelete(node) }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = "删除节点",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAdd) {
+        AddNodeDialog(
+            onDismiss = { showAdd = false },
+            onConfirm = { name, time ->
+                onAddNode(name, time)
+                showAdd = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddNodeDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, Long) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var dateMillis by remember { mutableLongStateOf(DateUtils.todayMillis()) }
+    var hour by remember { mutableStateOf(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) }
+    var minute by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MINUTE)) }
+    var showDate by remember { mutableStateOf(false) }
+    var showTime by remember { mutableStateOf(false) }
+
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMillis)
+    val timePickerState = rememberTimePickerState(initialHour = hour, initialMinute = minute)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加时间线节点") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                FilledTonalButton(
+                    onClick = { showDate = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(DateUtils.formatDate(dateMillis))
+                }
+                FilledTonalButton(
+                    onClick = { showTime = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("%02d:%02d".format(hour, minute))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val combined = DateUtils.startOfDay(dateMillis) +
+                        (hour * 3600L + minute * 60L) * 1000L
+                    onConfirm(name, combined)
+                },
+                enabled = name.isNotBlank()
+            ) { Text("添加") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+
+    if (showDate) {
+        DatePickerDialog(
+            onDismissRequest = { showDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDate = false
+                    datePickerState.selectedDateMillis?.let { dateMillis = DateUtils.startOfDay(it) }
+                }) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showDate = false }) { Text("取消") } }
+        ) { DatePicker(state = datePickerState) }
+    }
+
+    if (showTime) {
+        AlertDialog(
+            onDismissRequest = { showTime = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTime = false
+                    hour = timePickerState.hour
+                    minute = timePickerState.minute
+                }) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showTime = false }) { Text("取消") } },
+            text = { TimePicker(state = timePickerState) }
+        )
+    }
+}
