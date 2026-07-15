@@ -6,7 +6,6 @@ import com.example.countdowndays.data.EventEntity
 import com.example.countdowndays.data.EventRepository
 import com.example.countdowndays.data.EventWithNodes
 import com.example.countdowndays.util.ImageStorage
-import com.example.countdowndays.util.PrefsManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,15 +18,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class MainViewModel(
-    private val repo: EventRepository,
-    private val prefs: PrefsManager
+    private val repo: EventRepository
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
-
-    private val _background = MutableStateFlow<String?>(prefs.backgroundPath)
-    val backgroundPath: StateFlow<String?> = _background.asStateFlow()
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val events: StateFlow<List<EventWithNodes>> = _query
@@ -50,9 +45,5 @@ class MainViewModel(
             ImageStorage.delete(event.imagePath)
             repo.deleteEvent(event)
         }
-    }
-
-    fun refreshBackground() {
-        _background.value = prefs.backgroundPath
     }
 }

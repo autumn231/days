@@ -4,32 +4,20 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 像素风格日历前景。全部由方块拼成，无圆角无曲线。 -->
+    <!-- 像素风格太阳：核心方块 + 8 道光芒，全部由矩形拼成 -->
 
-    <!-- 装订环（深紫） -->
-    <path android:fillColor="#FF5B3FA0" android:pathData="M44,28 h4 v12 h-4 z" />
-    <path android:fillColor="#FF5B3FA0" android:pathData="M60,28 h4 v12 h-4 z" />
+    <!-- 太阳核心（琥珀黄） -->
+    <path android:fillColor="#FFFFC107" android:pathData="M45,45 h18 v18 h-18 z" />
 
-    <!-- 日历主体（白底） -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M34,38 h40 v40 h-40 z" />
+    <!-- 四向光芒（橙） -->
+    <path android:fillColor="#FFFF8F00" android:pathData="M51,30 h6 v12 h-6 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M51,66 h6 v12 h-6 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M30,51 h12 v6 h-12 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M66,51 h12 v6 h-12 z" />
 
-    <!-- 顶部横条（紫） -->
-    <path android:fillColor="#FF7C5CFF" android:pathData="M34,38 h40 v10 h-40 z" />
-
-    <!-- 日期像素点（紫），4 列 3 行网格，部分填充 -->
-    <!-- 第一行 -->
-    <path android:fillColor="#FF7C5CFF" android:pathData="M40,54 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M49,54 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M58,54 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M67,54 h5 v5 h-5 z" />
-    <!-- 第二行 -->
-    <path android:fillColor="#FF7C5CFF" android:pathData="M40,63 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M58,63 h5 v5 h-5 z" />
-    <!-- 第三行 -->
-    <path android:fillColor="#FF7C5CFF" android:pathData="M40,72 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M49,72 h5 v5 h-5 z" />
-    <path android:fillColor="#FF7C5CFF" android:pathData="M67,72 h5 v5 h-5 z" />
-
-    <!-- 高亮日期（倒数日，深紫） -->
-    <path android:fillColor="#FF3D2B8C" android:pathData="M58,72 h5 v5 h-5 z" />
+    <!-- 对角光芒（橙） -->
+    <path android:fillColor="#FFFF8F00" android:pathData="M39,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M63,36 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M39,66 h6 v6 h-6 z" />
+    <path android:fillColor="#FFFF8F00" android:pathData="M63,66 h6 v6 h-6 z" />
 </vector>
