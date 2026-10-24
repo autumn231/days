@@ -253,7 +253,7 @@ private fun HeaderCard(
     when (orientation) {
         ImageOrientation.PORTRAIT -> {
             // 竖版：图片在左，信息在右
-            Row(Modifier.fillMaxWidth().heightIn(min = 240.dp)) {
+            Row(Modifier.fillMaxWidth().height(240.dp)) {
                 Image(
                     painter = painter,
                     contentDescription = "查看原图",
@@ -318,14 +318,16 @@ private fun HeaderCard(
                     Image(
                         painter = painter,
                         contentDescription = "查看原图",
+                        // 父容器只有最小高度（高度由内容撑开），
+                        // 这里必须用 matchParentSize，fillMaxSize 在无限高度约束下会塌成 0 高
                         modifier = Modifier
-                            .fillMaxSize()
+                            .matchParentSize()
                             .clickable(onClick = onImageClick),
                         contentScale = ContentScale.Crop
                     )
-                    Box(Modifier.fillMaxSize().background(overlay))
+                    Box(Modifier.matchParentSize().background(overlay))
                 } else {
-                    Box(Modifier.fillMaxSize().background(gradient))
+                    Box(Modifier.matchParentSize().background(gradient))
                 }
                 HeaderInfo(
                     name = name,

@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,10 +42,13 @@ import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +80,8 @@ import com.example.countdowndays.R
 import com.example.countdowndays.data.EventWithNodes
 import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.ui.common.PillButton
+import com.example.countdowndays.ui.theme.BackgroundPresets
+import com.example.countdowndays.ui.theme.backgroundBrush
 import com.example.countdowndays.ui.theme.eventColor
 import com.example.countdowndays.util.DateUtils
 import com.example.countdowndays.util.ImageStorage
@@ -86,8 +92,9 @@ import kotlin.math.abs
 
 /**
  * 全屏展示页：卡片流，按日期从早到晚排列（左过去、右将来）。
- * 左右滑动切换事件，底部操作作用于当前页。
+ * 左右滑动切换；分享/存图会把「背景 + 卡片」整体导出。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShowcaseScreen(
     eventId: Long,
@@ -104,6 +111,7 @@ fun ShowcaseScreen(
 
     val pagerState = rememberPagerState(initialPage = 0) { events.size }
     var initialApplied by rememberSaveable { mutableStateOf(false) }
+    var showBackgroundSheet by remember { mutableStateOf(false) }
 
     // 列表加载完成后定位到被点开的那一条
     LaunchedEffect(events) {
@@ -114,7 +122,6 @@ fun ShowcaseScreen(
         }
     }
 
-    // 只有当前页的卡片会被截图
     val captureLayer = rememberGraphicsLayer()
     val current = events.getOrNull(pagerState.currentPage)
 
@@ -135,9 +142,11 @@ fun ShowcaseScreen(
         label = "accent"
     )
 
-    Box(Modifier.fillMaxSize()) {
-        ShowcaseBackground(current, accent)
-
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF141210))
+    ) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -184,14 +193,13 @@ fun ShowcaseScreen(
                 return@Column
             }
 
-            // 卡片流
+            // 卡片流（背景包含在每一页里，分享时一起导出）
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 30.dp),
-                pageSpacing = 14.dp
+                pageSpacing = 0.dp
             ) { page ->
                 ShowcasePage(
                     item = events[page],
@@ -199,12 +207,12 @@ fun ShowcaseScreen(
                 )
             }
 
-            // 操作区：横向可滚动，按钮不会再被挤出屏幕
+            // 操作区：横向可滚动
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(vertical = 16.dp),
+                    .padding(vertical = 14.dp),
                 contentPadding = PaddingValues(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -256,11 +264,7 @@ fun ShowcaseScreen(
                         text = "背景",
                         icon = Icons.Outlined.Image,
                         color = accent,
-                        onClick = {
-                            pickImage.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
+                        onClick = { showBackgroundSheet = true }
                     )
                 }
                 item {
@@ -272,7 +276,6 @@ fun ShowcaseScreen(
                     )
                 }
                 item {
-                    // 明确的圆形「新建」按钮
                     Box(
                         modifier = Modifier
                             .size(44.dp)
@@ -291,11 +294,99 @@ fun ShowcaseScreen(
             }
         }
     }
+
+    if (showBackgroundSheet && current != null) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showBackgroundSheet = false },
+            sheetState = sheetState
+        ) {
+            BackgroundSheet(
+                current = current,
+                onPickPreset = { index ->
+                    vm.setPreset(current.event.id, index)
+                    showBackgroundSheet = false
+                },
+                onPickImage = {
+                    showBackgroundSheet = false
+                    pickImage.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                onRemoveImage = {
+                    vm.setImage(current.event.id, null)
+                    showBackgroundSheet = false
+                }
+            )
+        }
+    }
 }
 
 @Composable
-private fun ShowcaseBackground(item: EventWithNodes?, accent: Color) {
-    val imagePath = item?.event?.imagePath
+private fun ShowcasePage(item: EventWithNodes, captureLayer: GraphicsLayer?) {
+    val event = item.event
+    val occ = event.occurrence()
+    val accent = eventColor(event.colorIndex)
+    var periodMode by remember(event.id) { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (captureLayer != null) {
+                    Modifier.drawWithContent {
+                        captureLayer.record { this@drawWithContent.drawContent() }
+                        drawLayer(captureLayer)
+                    }
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        ShowcaseBackground(item)
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .padding(horizontal = 26.dp)
+        ) {
+            ShowcaseCard(
+                name = event.name,
+                accent = accent,
+                numberText = if (periodMode) {
+                    periodText(occ.isToday, occ.daysToNext, occ.start)
+                } else {
+                    if (occ.isToday) "今天" else abs(occ.daysToNext ?: 0L).toString()
+                },
+                captionText = when {
+                    periodMode -> "累计"
+                    occ.isToday -> "就是今天"
+                    (occ.daysToNext ?: 0) < 0 -> "天前"
+                    else -> "天后"
+                },
+                startLine = buildString {
+                    append("起始日：")
+                    append(DateUtils.formatIso(occ.start))
+                    append("  ")
+                    append(DateUtils.weekdayCn(occ.start))
+                    if (event.isLunar && event.lunarMonth > 0) {
+                        append("\n")
+                        append(LunarCalendar.format(event.lunarMonth, event.lunarDay))
+                    }
+                },
+                onClickNumber = { periodMode = !periodMode }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShowcaseBackground(item: EventWithNodes) {
+    val event = item.event
+    val imagePath = event.imagePath
+    val accent = eventColor(event.colorIndex)
+
     if (!imagePath.isNullOrEmpty()) {
         Image(
             painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) }),
@@ -309,8 +400,8 @@ private fun ShowcaseBackground(item: EventWithNodes?, accent: Color) {
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.Black.copy(alpha = 0.45f),
-                            Color.Black.copy(alpha = 0.65f)
+                            Color.Black.copy(alpha = 0.42f),
+                            Color.Black.copy(alpha = 0.62f)
                         )
                     )
                 )
@@ -319,12 +410,18 @@ private fun ShowcaseBackground(item: EventWithNodes?, accent: Color) {
         Box(
             Modifier
                 .fillMaxSize()
+                .background(backgroundBrush(event.backgroundPreset, accent))
+        )
+        // 轻微暗角，避免浅色背景上白色文字看不清
+        Box(
+            Modifier
+                .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            accent.copy(alpha = 0.92f),
-                            accent.copy(alpha = 0.62f),
-                            Color(0xFF1F1B16)
+                            Color.Black.copy(alpha = 0.16f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.22f)
                         )
                     )
                 )
@@ -333,58 +430,91 @@ private fun ShowcaseBackground(item: EventWithNodes?, accent: Color) {
 }
 
 @Composable
-private fun ShowcasePage(item: EventWithNodes, captureLayer: GraphicsLayer?) {
-    val event = item.event
-    val occ = event.occurrence()
-    val accent = eventColor(event.colorIndex)
-    var periodMode by remember(event.id) { mutableStateOf(false) }
+private fun BackgroundSheet(
+    current: EventWithNodes,
+    onPickPreset: (Int) -> Unit,
+    onPickImage: () -> Unit,
+    onRemoveImage: () -> Unit
+) {
+    val accent = eventColor(current.event.colorIndex)
+    val usingImage = !current.event.imagePath.isNullOrEmpty()
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 28.dp)
     ) {
-        // 录制范围只包住卡片，避免分享图里出现大面积透明边距
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (captureLayer != null) {
-                        Modifier.drawWithContent {
-                            captureLayer.record { this@drawWithContent.drawContent() }
-                            drawLayer(captureLayer)
+        Text(
+            text = "背景",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(14.dp))
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(BackgroundPresets.size) { index ->
+                val preset = BackgroundPresets[index]
+                val selected = !usingImage && current.event.backgroundPreset == index
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (preset.colors.isEmpty()) {
+                                    Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.55f)))
+                                } else {
+                                    Brush.linearGradient(preset.colors)
+                                }
+                            )
+                            .then(
+                                if (selected) {
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clickable { onPickPreset(index) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_notification),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                    } else {
-                        Modifier
                     }
-                )
-        ) {
-            ShowcaseCard(
-            name = event.name,
-            accent = accent,
-            numberText = if (periodMode) {
-                periodText(occ.isToday, occ.daysToNext, occ.start)
-            } else {
-                if (occ.isToday) "今天" else abs(occ.daysToNext ?: 0L).toString()
-            },
-            captionText = when {
-                periodMode -> "累计"
-                occ.isToday -> "就是今天"
-                (occ.daysToNext ?: 0) < 0 -> "天前"
-                else -> "天后"
-            },
-            startLine = buildString {
-                append("起始日：")
-                append(DateUtils.formatIso(occ.start))
-                append("  ")
-                append(DateUtils.weekdayCn(occ.start))
-                if (event.isLunar && event.lunarMonth > 0) {
-                    append("\n")
-                    append(LunarCalendar.format(event.lunarMonth, event.lunarDay))
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = preset.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            },
-                onClickNumber = { periodMode = !periodMode }
-            )
+            }
         }
+
+        Spacer(Modifier.height(20.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton(
+                text = "从相册选择",
+                icon = Icons.Outlined.Image,
+                filled = true,
+                onClick = onPickImage
+            )
+            if (usingImage) {
+                PillButton(text = "移除配图", onClick = onRemoveImage)
+            }
+        }
+        Text(
+            text = "背景会一起进入分享图；选预设会清除已选的相片。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.padding(top = 12.dp)
+        )
     }
 }
 

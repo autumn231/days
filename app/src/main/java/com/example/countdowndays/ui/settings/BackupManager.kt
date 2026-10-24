@@ -139,6 +139,7 @@ object BackupManager {
             put("archived", archived)
             put("colorIndex", colorIndex)
             put("sortOrder", sortOrder)
+            put("backgroundPreset", backgroundPreset)
             put("reminderEnabled", reminderEnabled)
             put("reminderAdvanceDays", reminderAdvanceDays)
             put("reminderHour", reminderHour)
@@ -175,6 +176,7 @@ object BackupManager {
             archived = optBoolean("archived"),
             colorIndex = optInt("colorIndex"),
             sortOrder = optInt("sortOrder"),
+            backgroundPreset = optInt("backgroundPreset"),
             reminderEnabled = optBoolean("reminderEnabled"),
             reminderAdvanceDays = optInt("reminderAdvanceDays"),
             reminderHour = optInt("reminderHour", 9),

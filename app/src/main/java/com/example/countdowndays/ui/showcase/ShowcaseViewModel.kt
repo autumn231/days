@@ -23,6 +23,15 @@ class ShowcaseViewModel(private val repo: EventRepository) : ViewModel() {
         viewModelScope.launch { repo.setPinned(id, !currentlyPinned) }
     }
 
+    fun setPreset(id: Long, preset: Int) {
+        viewModelScope.launch {
+            // 选了预设就不再使用自定义照片
+            repo.getEvent(id)?.let {
+                repo.updateEvent(it.event.copy(backgroundPreset = preset, imagePath = null))
+            }
+        }
+    }
+
     fun setImage(id: Long, path: String?) {
         viewModelScope.launch {
             repo.getEvent(id)?.let { repo.updateEvent(it.event.copy(imagePath = path)) }

@@ -38,6 +38,8 @@ data class EventEntity(
     @ColumnInfo(defaultValue = "0") val colorIndex: Int = 0,
     /** 手动排序权重，越小越靠前 */
     @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** 展示页背景预设：0 = 跟随卡片色，1..N 对应 BackgroundPresets */
+    @ColumnInfo(defaultValue = "0") val backgroundPreset: Int = 0,
 
     /** 是否开启提醒 */
     @ColumnInfo(defaultValue = "0") val reminderEnabled: Boolean = false,
