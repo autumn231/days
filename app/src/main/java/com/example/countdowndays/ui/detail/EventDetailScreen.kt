@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +67,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -251,7 +253,7 @@ private fun HeaderCard(
     when (orientation) {
         ImageOrientation.PORTRAIT -> {
             // 竖版：图片在左，信息在右
-            Row(Modifier.fillMaxWidth().height(240.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 240.dp)) {
                 Image(
                     painter = painter,
                     contentDescription = "查看原图",
@@ -310,7 +312,7 @@ private fun HeaderCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (hasImage) 260.dp else 200.dp)
+                    .heightIn(min = if (hasImage) 260.dp else 210.dp)
             ) {
                 if (hasImage) {
                     Image(
@@ -364,8 +366,10 @@ private fun HeaderInfo(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = if (isToday) "今" else days.toString(),
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.displayLarge.copy(
+                    fontSize = 72.sp,
+                    lineHeight = 84.sp
+                ),
                 color = Color.White
             )
             Spacer(Modifier.width(10.dp))

@@ -3,36 +3,29 @@ package com.example.countdowndays.ui.showcase
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.countdowndays.data.EventRepository
-import com.example.countdowndays.data.EventWithNodes
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * 展示页数据：按日期升序排列，形成「左边过去、右边将来」的卡片流。
+ */
 class ShowcaseViewModel(private val repo: EventRepository) : ViewModel() {
 
-    private val _event = MutableStateFlow<EventWithNodes?>(null)
-    val event = _event.asStateFlow()
-
-    private var loadedId: Long? = null
-
-    fun load(id: Long) {
-        if (loadedId == id) return
-        loadedId = id
-        viewModelScope.launch {
-            repo.observeEvent(id).collect { _event.value = it }
+    val events = repo.observeAll()
+        .map { list ->
+            list.sortedWith(compareBy({ it.event.date }, { it.event.id }))
         }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun togglePin(id: Long, currentlyPinned: Boolean) {
+        viewModelScope.launch { repo.setPinned(id, !currentlyPinned) }
     }
 
-    fun togglePin() {
-        _event.value?.event?.let { e ->
-            viewModelScope.launch { repo.setPinned(e.id, !e.isPinned) }
-        }
-    }
-
-    fun setImage(path: String?) {
-        val ew = _event.value ?: return
+    fun setImage(id: Long, path: String?) {
         viewModelScope.launch {
-            repo.updateEvent(ew.event.copy(imagePath = path))
+            repo.getEvent(id)?.let { repo.updateEvent(it.event.copy(imagePath = path)) }
         }
     }
 }
