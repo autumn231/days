@@ -27,6 +27,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.ui.common.EventCard
 import com.example.countdowndays.ui.common.PillButton
 import com.example.countdowndays.ui.common.SectionHeader
@@ -115,8 +118,10 @@ fun MainScreen(
     val groups = remember(events, sortMode, categoryId) {
         groupEvents(events, sortMode, categoryId)
     }
-    val allRows = remember(groups) { groups.flatMap { it.second } }
-    val highlight = remember(allRows) { pickHighlight(allRows) }
+    // 焦点卡顺序：按日期升序，和展示页保持一致
+    val heroItems = remember(events) {
+        events.sortedWith(compareBy({ it.event.date }, { it.event.id }))
+    }
 
     LaunchedEffect(lastDeleted) {
         val item = lastDeleted ?: return@LaunchedEffect
@@ -240,13 +245,13 @@ fun MainScreen(
             contentPadding = PaddingValues(bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 焦点卡
-            highlight?.let { hl ->
+            // 焦点卡：所有事件在同一行里左右滑动，按日期从早到晚（左过去、右将来）
+            if (heroItems.isNotEmpty()) {
                 item(key = "hero") {
-                    HeroCard(
-                        row = hl,
-                        onClick = { onOpenEvent(hl.item.event.id) },
-                        onShowcase = { onOpenShowcase(hl.item.event.id) }
+                    HeroPager(
+                        items = heroItems,
+                        onOpen = onOpenEvent,
+                        onShowcase = onOpenShowcase
                     )
                 }
             }
@@ -369,13 +374,62 @@ private fun SwipeableEventRow(
 
 /** 顶部焦点卡：最近的一个日子，大数字 + 渐变底 */
 @Composable
+private fun HeroPager(
+    items: List<com.example.countdowndays.data.EventWithNodes>,
+    onOpen: (Long) -> Unit,
+    onShowcase: (Long) -> Unit
+) {
+    val pagerState = rememberPagerState { items.size }
+
+    Column {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(196.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            pageSpacing = 12.dp
+        ) { page ->
+            val item = items[page]
+            HeroCard(
+                item = item,
+                onClick = { onOpen(item.event.id) },
+                onShowcase = { onShowcase(item.event.id) }
+            )
+        }
+        if (items.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                repeat(items.size.coerceAtMost(8)) { index ->
+                    val selected = index == pagerState.currentPage
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(if (selected) 7.dp else 5.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HeroCard(
-    row: EventRow,
+    item: com.example.countdowndays.data.EventWithNodes,
     onClick: () -> Unit,
     onShowcase: () -> Unit
 ) {
-    val event = row.item.event
-    val occ = row.occ
+    val event = item.event
+    val occ = remember(item.event.id, item.event.date) { event.occurrence() }
     val accent = eventColor(event.colorIndex)
     val dark = MaterialTheme.colorScheme.surface.luminanceIsDark()
 
@@ -393,8 +447,7 @@ private fun HeroCard(
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .fillMaxSize()
             .clip(RoundedCornerShape(28.dp))
             .background(
                 Brush.linearGradient(
@@ -412,16 +465,16 @@ private fun HeroCard(
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                alpha = 0.35f
+                alpha = 0.42f
             )
             Box(
                 Modifier
                     .matchParentSize()
-                    .background(Color.Black.copy(alpha = 0.18f))
+                    .background(Color.Black.copy(alpha = 0.22f))
             )
         }
 
-        Column(Modifier.padding(22.dp)) {
+        Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = event.name,
@@ -440,7 +493,7 @@ private fun HeroCard(
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 if (occ.ended) {
                     Text(
@@ -457,7 +510,7 @@ private fun HeroCard(
                 } else {
                     Text(
                         text = abs(occ.daysToNext ?: 0L).toString(),
-                        style = MaterialTheme.typography.displayLarge.copy(fontSize = 76.sp),
+                        style = MaterialTheme.typography.displayLarge.copy(fontSize = 66.sp),
                         color = Color.White,
                         modifier = Modifier.graphicsLayer {
                             scaleX = scale
@@ -469,11 +522,11 @@ private fun HeroCard(
                         text = if ((occ.daysToNext ?: 0) > 0) "天后" else "天前",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White.copy(alpha = 0.9f),
-                        modifier = Modifier.padding(bottom = 14.dp)
+                        modifier = Modifier.padding(bottom = 10.dp)
                     )
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = buildString {
                     append(DateUtils.formatDateWithWeek(event.date))

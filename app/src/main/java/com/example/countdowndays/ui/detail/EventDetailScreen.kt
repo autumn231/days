@@ -201,19 +201,6 @@ fun EventDetailScreen(
     }
 }
 
-/** 图片方向分类，用于自适应布局 */
-private enum class ImageOrientation { NONE, LANDSCAPE, PORTRAIT, SQUARE }
-
-private fun classifyOrientation(w: Int, h: Int): ImageOrientation {
-    if (w <= 0 || h <= 0) return ImageOrientation.LANDSCAPE
-    val ratio = w.toFloat() / h.toFloat()
-    return when {
-        ratio > 1.15f -> ImageOrientation.LANDSCAPE
-        ratio < 0.87f -> ImageOrientation.PORTRAIT
-        else -> ImageOrientation.SQUARE
-    }
-}
-
 @Composable
 private fun HeaderCard(
     name: String,
@@ -224,121 +211,48 @@ private fun HeaderCard(
     val isToday = DateUtils.isToday(dateMillis)
     val isFuture = DateUtils.isFuture(dateMillis)
     val days = DateUtils.countdownDays(dateMillis)
-
     val hasImage = !imagePath.isNullOrEmpty()
-    var orientation by remember(imagePath) {
-        mutableStateOf(if (hasImage) ImageOrientation.LANDSCAPE else ImageOrientation.NONE)
-    }
-
-    val painter = rememberAsyncImagePainter(
-        model = if (hasImage) File(imagePath) else null,
-        onState = { state ->
-            if (state is AsyncImagePainter.State.Success) {
-                val d = state.result.drawable
-                orientation = classifyOrientation(d.intrinsicWidth, d.intrinsicHeight)
-            }
-        }
-    )
 
     val gradient = Brush.verticalGradient(
         0f to MaterialTheme.colorScheme.primary,
         1f to MaterialTheme.colorScheme.tertiary
     )
-    val overlay = Brush.verticalGradient(
-        0f to Color.Transparent,
-        0.5f to Color.Black.copy(alpha = 0.15f),
-        1f to Color.Black.copy(alpha = 0.65f)
+    // 压暗蒙版：保证白色文字在任何照片上都读得清
+    val scrim = Brush.verticalGradient(
+        0f to Color.Black.copy(alpha = 0.10f),
+        0.45f to Color.Black.copy(alpha = 0.28f),
+        1f to Color.Black.copy(alpha = 0.72f)
     )
 
-    when (orientation) {
-        ImageOrientation.PORTRAIT -> {
-            // 竖版：图片在左，信息在右
-            Row(Modifier.fillMaxWidth().height(240.dp)) {
-                Image(
-                    painter = painter,
-                    contentDescription = "查看原图",
-                    modifier = Modifier
-                        .width(150.dp)
-                        .fillMaxHeight()
-                        .clickable(onClick = onImageClick),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().background(gradient),
-                    contentAlignment = Alignment.Center
-                ) {
-                    HeaderInfo(
-                        name = name,
-                        dateMillis = dateMillis,
-                        isToday = isToday,
-                        isFuture = isFuture,
-                        days = days,
-                        modifier = Modifier.padding(20.dp)
-                    )
-                }
-            }
-        }
-
-        ImageOrientation.SQUARE -> {
-            // 方框：顶部居中显示
-            Column(Modifier.fillMaxWidth()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painter,
-                        contentDescription = "查看原图",
-                        modifier = Modifier
-                            .size(200.dp)
-                            .clickable(onClick = onImageClick),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-                Box(Modifier.fillMaxWidth().background(gradient).padding(20.dp)) {
-                    HeaderInfo(
-                        name = name,
-                        dateMillis = dateMillis,
-                        isToday = isToday,
-                        isFuture = isFuture,
-                        days = days
-                    )
-                }
-            }
-        }
-
-        else -> {
-            // 横版或无图：图片铺满顶部
-            Box(
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 230.dp)
+    ) {
+        if (hasImage) {
+            Image(
+                painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath!!) }),
+                contentDescription = "查看原图",
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = if (hasImage) 260.dp else 210.dp)
-            ) {
-                if (hasImage) {
-                    Image(
-                        painter = painter,
-                        contentDescription = "查看原图",
-                        // 父容器只有最小高度（高度由内容撑开），
-                        // 这里必须用 matchParentSize，fillMaxSize 在无限高度约束下会塌成 0 高
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable(onClick = onImageClick),
-                        contentScale = ContentScale.Crop
-                    )
-                    Box(Modifier.matchParentSize().background(overlay))
-                } else {
-                    Box(Modifier.matchParentSize().background(gradient))
-                }
-                HeaderInfo(
-                    name = name,
-                    dateMillis = dateMillis,
-                    isToday = isToday,
-                    isFuture = isFuture,
-                    days = days,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(24.dp)
-                )
-            }
+                    .matchParentSize()
+                    .clickable(onClick = onImageClick),
+                contentScale = ContentScale.Crop
+            )
+            Box(Modifier.matchParentSize().background(scrim))
+        } else {
+            Box(Modifier.matchParentSize().background(gradient))
         }
+
+        HeaderInfo(
+            name = name,
+            dateMillis = dateMillis,
+            isToday = isToday,
+            isFuture = isFuture,
+            days = days,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(24.dp)
+        )
     }
 }
 

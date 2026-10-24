@@ -37,7 +37,11 @@ class MainViewModel(
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     val events: StateFlow<List<EventWithNodes>> =
-        combine(_query.debounce(150), _categoryId) { q, c -> q to c }
+        combine(
+            // 只在用户输入时防抖；首次空查询立即出结果，避免打开首页空等 150ms
+            _query.debounce { if (it.isEmpty()) 0L else 150L },
+            _categoryId
+        ) { q, c -> q to c }
             .flatMapLatest { (q, _) ->
                 if (q.isBlank()) repo.observeAll() else repo.observeSearch(q.trim())
             }

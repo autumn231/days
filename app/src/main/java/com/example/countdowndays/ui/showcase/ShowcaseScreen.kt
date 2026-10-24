@@ -35,7 +35,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.SaveAlt
@@ -101,6 +100,8 @@ fun ShowcaseScreen(
     onBack: () -> Unit,
     onEdit: (Long) -> Unit,
     onAddNew: () -> Unit,
+    /** 关闭后不录制分享图层（JVM 测试的软件画布不支持 RenderNode） */
+    captureEnabled: Boolean = true,
     vm: ShowcaseViewModel = com.example.countdowndays.ui.common.appViewModel {
         ShowcaseViewModel(it.repository)
     }
@@ -147,12 +148,26 @@ fun ShowcaseScreen(
             .fillMaxSize()
             .background(Color(0xFF141210))
     ) {
+        // 背景铺满整屏（含状态栏与底部操作区），分享时一起导出
+        if (current != null) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                pageSpacing = 0.dp
+            ) { page ->
+                ShowcasePage(
+                    item = events[page],
+                    captureLayer = if (captureEnabled && page == pagerState.currentPage) captureLayer else null
+                )
+            }
+        }
+
+        // 前景：顶栏与底部操作，浮在背景之上
         Column(
             Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
         ) {
-            // 顶栏
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -186,108 +201,79 @@ fun ShowcaseScreen(
                 }
             }
 
+            Spacer(Modifier.weight(1f))
+
             if (current == null) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color.White)
                 }
-                return@Column
-            }
-
-            // 卡片流（背景包含在每一页里，分享时一起导出）
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                pageSpacing = 0.dp
-            ) { page ->
-                ShowcasePage(
-                    item = events[page],
-                    captureLayer = if (page == pagerState.currentPage) captureLayer else null
-                )
-            }
-
-            // 操作区：横向可滚动
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(vertical = 14.dp),
-                contentPadding = PaddingValues(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                item {
-                    PillButton(
-                        text = "分享",
-                        icon = Icons.Filled.Share,
-                        filled = true,
-                        color = accent,
-                        onClick = {
-                            scope.launch {
-                                runCatching { captureLayer.toImageBitmap() }
-                                    .onSuccess { bitmap ->
-                                        runCatching {
-                                            ShareUtils.shareCard(context, bitmap, current.event.name)
-                                        }.onFailure {
-                                            Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                Spacer(Modifier.height(60.dp))
+            } else {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 10.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item {
+                        PillButton(
+                            text = "分享",
+                            icon = Icons.Filled.Share,
+                            filled = true,
+                            color = accent,
+                            onClick = {
+                                scope.launch {
+                                    runCatching { captureLayer.toImageBitmap() }
+                                        .onSuccess { bitmap ->
+                                            runCatching {
+                                                ShareUtils.shareCard(context, bitmap, current.event.name)
+                                            }.onFailure {
+                                                Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
-                                    }
+                                }
                             }
-                        }
-                    )
-                }
-                item {
-                    PillButton(
-                        text = "存为图片",
-                        icon = Icons.Filled.SaveAlt,
-                        color = accent,
-                        onClick = {
-                            scope.launch {
-                                runCatching { captureLayer.toImageBitmap() }
-                                    .onSuccess { bitmap ->
-                                        val ok = ShareUtils.saveToGallery(
-                                            context, bitmap, "days_${System.currentTimeMillis()}"
-                                        )
-                                        Toast.makeText(
-                                            context,
-                                            if (ok) "已保存到相册" else "保存失败",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = "存为图片",
+                            icon = Icons.Filled.SaveAlt,
+                            color = accent,
+                            onClick = {
+                                scope.launch {
+                                    runCatching { captureLayer.toImageBitmap() }
+                                        .onSuccess { bitmap ->
+                                            val ok = ShareUtils.saveToGallery(
+                                                context, bitmap, "days_${System.currentTimeMillis()}"
+                                            )
+                                            Toast.makeText(
+                                                context,
+                                                if (ok) "已保存到相册" else "保存失败",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                }
                             }
-                        }
-                    )
-                }
-                item {
-                    PillButton(
-                        text = "背景",
-                        icon = Icons.Outlined.Image,
-                        color = accent,
-                        onClick = { showBackgroundSheet = true }
-                    )
-                }
-                item {
-                    PillButton(
-                        text = if (current.event.isPinned) "已置顶" else "置顶",
-                        icon = Icons.Filled.Flag,
-                        color = accent,
-                        onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
-                    )
-                }
-                item {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(accent)
-                            .clickable(onClick = onAddNew),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = "新建事件",
-                            tint = Color.White
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = "背景",
+                            icon = Icons.Outlined.Image,
+                            color = accent,
+                            onClick = { showBackgroundSheet = true }
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = if (current.event.isPinned) "已置顶" else "置顶",
+                            icon = Icons.Filled.Flag,
+                            color = accent,
+                            onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
                         )
                     }
                 }
@@ -347,9 +333,10 @@ private fun ShowcasePage(item: EventWithNodes, captureLayer: GraphicsLayer?) {
 
         Box(
             modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(horizontal = 26.dp)
+                .fillMaxSize()
+                .padding(top = 64.dp, bottom = 96.dp)
+                .padding(horizontal = 26.dp),
+            contentAlignment = Alignment.Center
         ) {
             ShowcaseCard(
                 name = event.name,
@@ -387,6 +374,13 @@ private fun ShowcaseBackground(item: EventWithNodes) {
     val imagePath = event.imagePath
     val accent = eventColor(event.colorIndex)
 
+    // 底色永远先铺一层：即使配图丢失/解码失败，也不会出现整块黑
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(backgroundBrush(event.backgroundPreset, accent))
+    )
+
     if (!imagePath.isNullOrEmpty()) {
         Image(
             painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) }),
@@ -407,11 +401,6 @@ private fun ShowcaseBackground(item: EventWithNodes) {
                 )
         )
     } else {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(backgroundBrush(event.backgroundPreset, accent))
-        )
         // 轻微暗角，避免浅色背景上白色文字看不清
         Box(
             Modifier
