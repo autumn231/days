@@ -7,6 +7,8 @@ import android.graphics.Paint
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.countdowndays.data.EventEntity
@@ -168,8 +170,12 @@ class UiSmokeTest {
                 )
             }
         }
+        // 默认显示「418 天前」，点数字切到「累计」时长后，上方才出现「已经过了」
+        waitForText("418")
+        rule.onNodeWithText("418").performClick()
         waitForText("已经过了")
         assertTrue(hasText("已经过了"))
+        assertTrue(hasText("累计"))
         snapshot("05_showcase_past")
     }
 

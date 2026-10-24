@@ -379,6 +379,8 @@ private fun ShowcasePage(
     val occ = event.occurrence()
     val accent = eventColor(event.colorIndex)
     var periodMode by remember(event.id) { mutableStateOf(false) }
+    // 已经过去的日子：非重复且起始日在今天之前，或重复已到结束日
+    val isPast = occ.ended || (!occ.isRepeating && occ.start.isBefore(LocalDate.now()))
 
     Box(
         modifier = Modifier
@@ -418,15 +420,10 @@ private fun ShowcasePage(
                     (occ.daysToNext ?: 0) < 0 -> "天前"
                     else -> "天后"
                 },
+                // 「已经过了」放在累计时长上方，而不是日期行
+                eyebrow = if (periodMode && isPast) "已经过了" else null,
                 startLine = buildString {
-                    // 已经过去的日子明确标注，避免误读成未来的日期
-                    append(
-                        when {
-                            occ.ended -> "已经结束："
-                            !occ.isRepeating && occ.start.isBefore(LocalDate.now()) -> "已经过了："
-                            else -> "起始日："
-                        }
-                    )
+                    append(if (occ.ended) "已经结束：" else "起始日：")
                     append(DateUtils.formatIso(occ.start))
                     append("  ")
                     append(DateUtils.weekdayCn(occ.start))
@@ -597,6 +594,7 @@ private fun ShowcaseCard(
     captionText: String,
     startLine: String,
     modifier: Modifier = Modifier,
+    eyebrow: String? = null,
     onClickNumber: () -> Unit
 ) {
     Column(
@@ -635,6 +633,15 @@ private fun ShowcaseCard(
                 label = "number"
             ) { text ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (eyebrow != null) {
+                        Text(
+                            text = eyebrow,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF9C9284),
+                            letterSpacing = 4.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         text = text,
                         fontFamily = FontFamily.Serif,
