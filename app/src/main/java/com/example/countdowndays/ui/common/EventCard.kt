@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -23,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +56,7 @@ fun EventCard(
     val isFuture = DateUtils.isFuture(event.date)
     val days = DateUtils.countdownDays(event.date)
     var menuOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     Card(
         onClick = onClick,
@@ -161,9 +164,27 @@ fun EventCard(
                 )
                 DropdownMenuItem(
                     text = { Text("删除") },
-                    onClick = { menuOpen = false; onDelete() }
+                    onClick = { menuOpen = false; confirmDelete = true }
                 )
             }
         }
+    }
+
+    // 删除是破坏性操作，加一层确认；之前从菜单点一下就直接删掉了
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除事件") },
+            text = { Text("确定删除「${event.name}」？时间线与配图会一并删除，无法撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDelete()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            }
+        )
     }
 }

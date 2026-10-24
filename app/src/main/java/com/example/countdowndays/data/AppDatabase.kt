@@ -23,7 +23,12 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "countdown.db"
-                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                )
+                    // 只在降级（装回旧版本）时清库。升级缺少迁移会直接抛错而不是静默清空全部记录，
+                    // 避免以前 fallbackToDestructiveMigration() 无声抹掉用户保存的日子。
+                    .fallbackToDestructiveMigrationOnDowngrade()
+                    .build()
+                    .also { INSTANCE = it }
             }
     }
 }

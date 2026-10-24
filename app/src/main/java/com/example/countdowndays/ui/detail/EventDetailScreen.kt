@@ -23,7 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -98,7 +98,7 @@ fun EventDetailScreen(
                 title = { Text(ew?.event?.name ?: "事件详情") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
@@ -642,6 +642,8 @@ private fun FullScreenImageViewer(
     var scale by remember { mutableStateOf(1f) }
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
+    // File 实例复用，避免每次重组都重新加载图片
+    val imageModel = remember(imagePath) { File(imagePath) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -682,7 +684,7 @@ private fun FullScreenImageViewer(
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = rememberAsyncImagePainter(File(imagePath)),
+                painter = rememberAsyncImagePainter(imageModel),
                 contentDescription = "原图",
                 modifier = Modifier
                     .fillMaxSize()

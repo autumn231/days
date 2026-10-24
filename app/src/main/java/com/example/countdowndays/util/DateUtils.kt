@@ -1,10 +1,13 @@
 package com.example.countdowndays.util
 
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 object DateUtils {
 
@@ -25,10 +28,17 @@ object DateUtils {
 
     fun todayMillis(): Long = startOfDay(System.currentTimeMillis())
 
-    /** 目标日期相对今天的天数差；未来为正，过去为负，今天为 0 */
+    /**
+     * 目标日期相对今天的天数差；未来为正，过去为负，今天为 0。
+     *
+     * 之前用 (startOfDay(目标) - today) / 86400000 计算，
+     * 在有夏令时的时区"一天"可能是 23 或 25 小时，会被截断成少/多一天。
+     * 这里按日历日相减，与时区偏移、夏令时无关。
+     */
     fun dayDiff(targetMillis: Long): Long {
-        val ms = startOfDay(targetMillis) - todayMillis()
-        return TimeUnit.MILLISECONDS.toDays(ms)
+        val zone = ZoneId.systemDefault()
+        val target = Instant.ofEpochMilli(targetMillis).atZone(zone).toLocalDate()
+        return ChronoUnit.DAYS.between(LocalDate.now(zone), target)
     }
 
     fun isToday(targetMillis: Long): Boolean = dayDiff(targetMillis) == 0L

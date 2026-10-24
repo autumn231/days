@@ -14,3 +14,12 @@
 .cxx
 local.properties
 /absolute/
+
+# 发布签名材料（只留在构建机本地）
+keystore.properties
+*.jks
+*.keystore
+
+# Kotlin 构建缓存 / 本地发布产物
+.kotlin/
+/dist

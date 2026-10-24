@@ -1,21 +1,19 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ---------------------------------------------------------------------------
+# 倒数日 release R8 规则
+# 开启 isMinifyEnabled 后需要保留 Room 依赖的符号，否则运行时会崩。
+# ---------------------------------------------------------------------------
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Room：实体 / DAO 与生成实现通过反射按类名查找
+-keep class com.example.countdowndays.data.** { *; }
+-keepclassmembers class com.example.countdowndays.data.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Room 运行时通过类名反射实例化 <Database>_Impl
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+-dontwarn androidx.room.paging.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Coil
+-dontwarn coil.**
+
+# 保留行号，便于定位线上崩溃
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

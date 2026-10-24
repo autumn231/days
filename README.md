@@ -28,7 +28,7 @@
 | 图片加载 | Coil |
 | 图片选择 | ActivityResultContracts.PickVisualMedia（系统 Photo Picker） |
 | 构建 | Gradle Kotlin DSL + Version Catalog |
-| CI/CD | GitHub Actions（自动编译并发布 Release） |
+| CI/CD | 构建机本地脚本（R8 混淆，仅 arm64-v8a） |
 
 ## 项目结构
 
@@ -70,20 +70,55 @@ app/src/main/java/com/example/countdowndays/
 app/build/outputs/apk/release/app-release.apk
 ```
 
-## CI/CD
+## 构建
 
-推送到 `main` 分支会自动触发 GitHub Actions 工作流（[.github/workflows/build.yml](.github/workflows/build.yml)）：
+需要 JDK 17 + Android SDK 36。
 
-1. 编译 Release APK
-2. 从 `versionName` 生成版本标签（如 `v2.0`）
-3. 自动提取上一个标签到当前的 commit messages 作为更新内容
-4. 发布到 GitHub Release 并附带 APK
+```bash
+# 编译 Release APK（开启 R8 + 资源压缩，只打包 arm64-v8a）
+./gradlew assembleRelease
+
+# 产物路径
+app/build/outputs/apk/release/app-release.apk
+```
+
+### 发布签名
+
+Release 包使用独立签名密钥，签名信息从仓库根目录的 `keystore.properties` 读取（**该文件不入库**）：
+
+```properties
+storeFile=/absolute/path/to/days-release.jks
+storePassword=******
+keyAlias=days
+keyPassword=******
+```
+
+没有该文件时会自动回退到 debug 签名，方便任意机器验证构建，但这种包不能用于正式发布。
+
+## 发布
+
+发布不再依赖 GitHub Actions，由构建机本地脚本完成（构建 → 校验 → 打 tag → 上传 Release）：
+
+```bash
+./scripts/release.sh              # 构建并发布
+./scripts/release.sh --build-only # 只构建，产物在 dist/
+./scripts/release.sh --draft      # 发布为 draft
+```
+
+脚本会强制：
+
+- release 构建（R8 混淆 + 资源压缩），不会误发 debug 包
+- 只保留 `arm64-v8a` 单一 ABI，产物名 `days-v<version>-arm64-v8a.apk`
+- ABI 与签名校验通过才上传
+- Release Notes 从 [CHANGELOG.md](CHANGELOG.md) 自动提取对应版本内容
+
+发布前请先提升 `app/build.gradle.kts` 中的 `versionCode` 与 `versionName`。
 
 ## 下载
 
 最新版本请前往 [Releases](https://github.com/autumn231/days/releases) 页面下载 APK 安装。
 
-> 当前 APK 使用 debug 签名，可直接安装。
+> v2.3 起改用独立签名密钥，与旧版本签名不一致，覆盖安装会失败，需要先卸载旧版本。
 
 ## 关于
 
