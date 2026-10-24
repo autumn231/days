@@ -17,31 +17,33 @@ data class EventEntity(
     val createdAt: Long = System.currentTimeMillis(),
 
     // ---------- v2 新增 ----------
+    // 注意：这些 defaultValue 必须和 MIGRATION_1_2 里的 ALTER 语句完全一致，
+    // 否则升级后的表结构与全新安装不一致，Room 的 schema 校验会直接抛异常。
     /** 重复规则，取值见 RepeatType.name */
-    val repeatType: String = "NONE",
+    @ColumnInfo(defaultValue = "'NONE'") val repeatType: String = "NONE",
     /** 重复结束日期（epoch 毫秒，当天 0 点）；null 表示永不结束 */
     val repeatEndDate: Long? = null,
     /** 是否按农历记录（生日、祭日等） */
-    val isLunar: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val isLunar: Boolean = false,
     /** 农历月（1-12），isLunar 为 true 时有效 */
-    val lunarMonth: Int = 0,
+    @ColumnInfo(defaultValue = "0") val lunarMonth: Int = 0,
     /** 农历日（1-30） */
-    val lunarDay: Int = 0,
+    @ColumnInfo(defaultValue = "0") val lunarDay: Int = 0,
 
     /** 所属分类，null 表示未分类 */
     val categoryId: Long? = null,
     /** 是否归档（不出现在主页列表） */
-    val archived: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
     /** 卡片主题色索引，对应 EventPalette */
-    val colorIndex: Int = 0,
+    @ColumnInfo(defaultValue = "0") val colorIndex: Int = 0,
     /** 手动排序权重，越小越靠前 */
-    val sortOrder: Int = 0,
+    @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
 
     /** 是否开启提醒 */
-    val reminderEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val reminderEnabled: Boolean = false,
     /** 提前多少天提醒（0 = 当天） */
-    val reminderAdvanceDays: Int = 0,
+    @ColumnInfo(defaultValue = "0") val reminderAdvanceDays: Int = 0,
     /** 提醒时刻（24 小时制） */
-    val reminderHour: Int = 9,
-    val reminderMinute: Int = 0
+    @ColumnInfo(defaultValue = "9") val reminderHour: Int = 9,
+    @ColumnInfo(defaultValue = "0") val reminderMinute: Int = 0
 )
