@@ -1,7 +1,9 @@
 package com.example.countdowndays.ui.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -62,6 +64,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,11 +73,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.countdowndays.data.indexNearestToday
 import com.example.countdowndays.data.occurrence
+import com.example.countdowndays.data.sortedTimeline
 import com.example.countdowndays.ui.common.EventCard
 import com.example.countdowndays.ui.common.PillButton
 import com.example.countdowndays.ui.common.SectionHeader
@@ -82,12 +88,12 @@ import com.example.countdowndays.ui.main.EventBucket
 import com.example.countdowndays.ui.main.EventRow
 import com.example.countdowndays.ui.main.MainViewModel
 import com.example.countdowndays.ui.main.groupEvents
-import com.example.countdowndays.ui.main.pickHighlight
 import com.example.countdowndays.ui.theme.eventColor
 import com.example.countdowndays.util.DateUtils
 import com.example.countdowndays.util.LunarCalendar
 import com.example.countdowndays.util.SortMode
 import java.io.File
+import kotlin.math.absoluteValue
 import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -118,10 +124,8 @@ fun MainScreen(
     val groups = remember(events, sortMode, categoryId) {
         groupEvents(events, sortMode, categoryId)
     }
-    // 焦点卡顺序：按日期升序，和展示页保持一致
-    val heroItems = remember(events) {
-        events.sortedWith(compareBy({ it.event.date }, { it.event.id }))
-    }
+    // 焦点卡顺序：以「下一次发生日」升序，左边早于今天、右边晚于今天
+    val heroItems = remember(events) { events.sortedTimeline() }
 
     LaunchedEffect(lastDeleted) {
         val item = lastDeleted ?: return@LaunchedEffect
@@ -372,7 +376,7 @@ private fun SwipeableEventRow(
     }
 }
 
-/** 顶部焦点卡：最近的一个日子，大数字 + 渐变底 */
+/** 顶部焦点卡：所有事件排成一行，默认停在今天或离今天最近的那一张 */
 @Composable
 private fun HeroPager(
     items: List<com.example.countdowndays.data.EventWithNodes>,
@@ -380,6 +384,25 @@ private fun HeroPager(
     onShowcase: (Long) -> Unit
 ) {
     val pagerState = rememberPagerState { items.size }
+
+    // 默认停靠「今天 / 离今天最近」的一张，而不是永远从最早的一张开始。
+    // 数据是异步来的，所以等首次拿到列表后再定位一次。
+    var positioned by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(items.size) {
+        if (!positioned && items.isNotEmpty()) {
+            positioned = true
+            pagerState.scrollToPage(items.indexNearestToday())
+        }
+    }
+
+    // 首屏淡入，避免数据到位时卡片"啪"地出现
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val enterAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(450),
+        label = "heroEnter"
+    )
 
     Column {
         HorizontalPager(
@@ -390,33 +413,60 @@ private fun HeroPager(
             contentPadding = PaddingValues(horizontal = 16.dp),
             pageSpacing = 12.dp
         ) { page ->
-            val item = items[page]
+            // 视差：相邻卡片缩小并淡出，滑动时有层次感
+            val offset = ((pagerState.currentPage - page) +
+                pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
             HeroCard(
-                item = item,
-                onClick = { onOpen(item.event.id) },
-                onShowcase = { onShowcase(item.event.id) }
+                item = items[page],
+                modifier = Modifier.graphicsLayer {
+                    val scale = 1f - 0.07f * offset
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = enterAlpha * (1f - 0.45f * offset)
+                },
+                onClick = { onOpen(items[page].event.id) },
+                onShowcase = { onShowcase(items[page].event.id) }
             )
         }
+
         if (items.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                repeat(items.size.coerceAtMost(8)) { index ->
-                    val selected = index == pagerState.currentPage
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 3.dp)
-                            .size(if (selected) 7.dp else 5.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant
-                            )
-                    )
+            if (items.size <= 10) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items.indices.forEach { index ->
+                        val selected = index == pagerState.currentPage
+                        val dotWidth by animateDpAsState(
+                            targetValue = if (selected) 18.dp else 6.dp,
+                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+                            label = "dotWidth"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp)
+                                .size(width = dotWidth, height = 6.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant
+                                )
+                        )
+                    }
                 }
+            } else {
+                Text(
+                    text = "${pagerState.currentPage + 1} / ${items.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                )
             }
         }
     }
@@ -425,6 +475,7 @@ private fun HeroPager(
 @Composable
 private fun HeroCard(
     item: com.example.countdowndays.data.EventWithNodes,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onShowcase: () -> Unit
 ) {
@@ -446,7 +497,7 @@ private fun HeroCard(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(28.dp))
             .background(

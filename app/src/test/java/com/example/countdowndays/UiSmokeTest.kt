@@ -82,9 +82,9 @@ class UiSmokeTest {
                 )
             }
         }
-        waitForText("哈哈")
-        // 焦点卡按日期升序，最早的是「哈哈」
-        assertTrue(hasText("哈哈"))
+        waitForText("今天")
+        // 焦点卡默认停在今天/离今天最近的一张，而不是最早的一张
+        assertTrue(hasText("今天"))
         assertTrue(hasText("倒数日"))
         snapshot("01_home")
     }
@@ -130,6 +130,26 @@ class UiSmokeTest {
         assertTrue(hasText("考研"))
         assertTrue(hasText("分享"))
         snapshot("03_showcase")
+    }
+
+    @Test
+    fun showcaseScreen_defaultsToNearestToday() {
+        // eventId 传一个不存在的值：应回退到「今天 / 离今天最近」的那张
+        rule.setContent {
+            CountdownTheme(darkTheme = false) {
+                ShowcaseScreen(
+                    eventId = -1L,
+                    onBack = {},
+                    onEdit = {},
+                    onAddNew = {},
+                    captureEnabled = false
+                )
+            }
+        }
+        waitForText("今天")
+        assertTrue(hasText("今天"))
+        assertTrue(hasText("分享"))
+        snapshot("04_showcase_default")
     }
 
     private fun waitForText(text: String, timeoutMs: Long = 5_000) {

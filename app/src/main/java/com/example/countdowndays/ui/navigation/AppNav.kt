@@ -3,6 +3,8 @@ package com.example.countdowndays.ui.navigation
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
@@ -43,10 +45,16 @@ fun AppNav(
         navController = nav,
         startDestination = Routes.MAIN,
         enterTransition = {
-            slideInHorizontally(tween(DURATION)) { it / 5 } + fadeIn(tween(DURATION))
+            slideInHorizontally(tween(DURATION)) { it / 5 } +
+                fadeIn(tween(DURATION)) +
+                scaleIn(tween(DURATION), initialScale = 0.96f)
         },
-        exitTransition = { fadeOut(tween(DURATION / 2)) },
-        popEnterTransition = { fadeIn(tween(DURATION / 2)) },
+        exitTransition = {
+            fadeOut(tween(DURATION / 2)) + scaleOut(tween(DURATION), targetScale = 0.98f)
+        },
+        popEnterTransition = {
+            fadeIn(tween(DURATION / 2)) + scaleIn(tween(DURATION), initialScale = 0.98f)
+        },
         popExitTransition = {
             slideOutHorizontally(tween(DURATION)) { it / 5 } + fadeOut(tween(DURATION))
         }

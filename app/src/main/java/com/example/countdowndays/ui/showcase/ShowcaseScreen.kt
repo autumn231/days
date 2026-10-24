@@ -5,10 +5,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -51,6 +54,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,11 +66,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
 import com.example.countdowndays.R
 import com.example.countdowndays.data.EventWithNodes
+import com.example.countdowndays.data.indexNearestToday
 import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.ui.common.PillButton
 import com.example.countdowndays.ui.theme.BackgroundPresets
@@ -88,6 +96,10 @@ import com.example.countdowndays.util.LunarCalendar
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.absoluteValue
+
+/** 分享图高度占屏幕的比例：上下各裁掉 20%，留出更修长的构图 */
+private const val SHARE_HEIGHT_RATIO = 0.6f
 
 /**
  * 全屏展示页：卡片流，按日期从早到晚排列（左过去、右将来）。
@@ -109,17 +121,25 @@ fun ShowcaseScreen(
     val events by vm.events.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
     val pagerState = rememberPagerState(initialPage = 0) { events.size }
     var initialApplied by rememberSaveable { mutableStateOf(false) }
     var showBackgroundSheet by remember { mutableStateOf(false) }
+    // 当前卡片实际高度（px），用于保证裁切分享图时不切到卡片
+    var cardHeightPx by remember { mutableIntStateOf(0) }
+    // 底部操作栏入场动画
+    var chromeIn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { chromeIn = true }
 
-    // 列表加载完成后定位到被点开的那一条
+    // 列表加载完成后定位到被点开的那一条；
+    // 找不到（已删除等）就停在今天或离今天最近的一张
     LaunchedEffect(events) {
         if (!initialApplied && events.isNotEmpty()) {
-            val index = events.indexOfFirst { it.event.id == eventId }
-            if (index >= 0) pagerState.scrollToPage(index)
             initialApplied = true
+            val index = events.indexOfFirst { it.event.id == eventId }
+                .takeIf { it >= 0 } ?: events.indexNearestToday()
+            pagerState.scrollToPage(index)
         }
     }
 
@@ -143,6 +163,18 @@ fun ShowcaseScreen(
         label = "accent"
     )
 
+    // 分享图：上下对称裁到屏幕高度的 3/5（不再铺满整屏）；
+    // 卡片本身接近这个高度时，以「卡片 + 留白」为准，避免把内容切掉
+    suspend fun captureForShare() = run {
+        val raw = captureLayer.toImageBitmap()
+        val padding = with(density) { 28.dp.roundToPx() }
+        val target = maxOf(
+            (raw.height * SHARE_HEIGHT_RATIO).toInt(),
+            cardHeightPx + padding * 2
+        )
+        raw.cropCenterHeight(target)
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -155,10 +187,25 @@ fun ShowcaseScreen(
                 modifier = Modifier.fillMaxSize(),
                 pageSpacing = 0.dp
             ) { page ->
-                ShowcasePage(
-                    item = events[page],
-                    captureLayer = if (captureEnabled && page == pagerState.currentPage) captureLayer else null
-                )
+                // 翻页时相邻页轻微缩小淡出，滑动过程有层次
+                val offset = ((pagerState.currentPage - page) +
+                    pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val scale = 1f - 0.06f * offset
+                            scaleX = scale
+                            scaleY = scale
+                            alpha = 1f - 0.40f * offset
+                        }
+                ) {
+                    ShowcasePage(
+                        item = events[page],
+                        captureLayer = if (captureEnabled && page == pagerState.currentPage) captureLayer else null,
+                        onCardHeight = { if (page == pagerState.currentPage) cardHeightPx = it }
+                    )
+                }
             }
         }
 
@@ -189,12 +236,21 @@ fun ShowcaseScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 if (current != null) {
-                    Text(
-                        text = "${pagerState.currentPage + 1} / ${events.size}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.75f),
+                    AnimatedContent(
+                        targetState = pagerState.currentPage,
+                        transitionSpec = {
+                            (slideInVertically(tween(200)) { it / 2 } + fadeIn(tween(200))) togetherWith
+                                (slideOutVertically(tween(200)) { -it / 2 } + fadeOut(tween(140)))
+                        },
+                        label = "pageIndex",
                         modifier = Modifier.padding(end = 4.dp)
-                    )
+                    ) { page ->
+                        Text(
+                            text = "${page + 1} / ${events.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
                     IconButton(onClick = { onEdit(current.event.id) }) {
                         Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = Color.White)
                     }
@@ -209,72 +265,78 @@ fun ShowcaseScreen(
                 }
                 Spacer(Modifier.height(60.dp))
             } else {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(bottom = 10.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                AnimatedVisibility(
+                    visible = chromeIn,
+                    enter = fadeIn(tween(320, delayMillis = 100)) +
+                        slideInVertically(tween(320, delayMillis = 100)) { it / 3 }
                 ) {
-                    item {
-                        PillButton(
-                            text = "分享",
-                            icon = Icons.Filled.Share,
-                            filled = true,
-                            color = accent,
-                            onClick = {
-                                scope.launch {
-                                    runCatching { captureLayer.toImageBitmap() }
-                                        .onSuccess { bitmap ->
-                                            runCatching {
-                                                ShareUtils.shareCard(context, bitmap, current.event.name)
-                                            }.onFailure {
-                                                Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(bottom = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        item {
+                            PillButton(
+                                text = "分享",
+                                icon = Icons.Filled.Share,
+                                filled = true,
+                                color = accent,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching { captureForShare() }
+                                            .onSuccess { bitmap ->
+                                                runCatching {
+                                                    ShareUtils.shareCard(context, bitmap, current.event.name)
+                                                }.onFailure {
+                                                    Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
-                                        }
+                                    }
                                 }
-                            }
-                        )
-                    }
-                    item {
-                        PillButton(
-                            text = "存为图片",
-                            icon = Icons.Filled.SaveAlt,
-                            color = accent,
-                            onClick = {
-                                scope.launch {
-                                    runCatching { captureLayer.toImageBitmap() }
-                                        .onSuccess { bitmap ->
-                                            val ok = ShareUtils.saveToGallery(
-                                                context, bitmap, "days_${System.currentTimeMillis()}"
-                                            )
-                                            Toast.makeText(
-                                                context,
-                                                if (ok) "已保存到相册" else "保存失败",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
+                            )
+                        }
+                        item {
+                            PillButton(
+                                text = "存为图片",
+                                icon = Icons.Filled.SaveAlt,
+                                color = accent,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching { captureForShare() }
+                                            .onSuccess { bitmap ->
+                                                val ok = ShareUtils.saveToGallery(
+                                                    context, bitmap, "days_${System.currentTimeMillis()}"
+                                                )
+                                                Toast.makeText(
+                                                    context,
+                                                    if (ok) "已保存到相册" else "保存失败",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                    }
                                 }
-                            }
-                        )
-                    }
-                    item {
-                        PillButton(
-                            text = "背景",
-                            icon = Icons.Outlined.Image,
-                            color = accent,
-                            onClick = { showBackgroundSheet = true }
-                        )
-                    }
-                    item {
-                        PillButton(
-                            text = if (current.event.isPinned) "已置顶" else "置顶",
-                            icon = Icons.Filled.Flag,
-                            color = accent,
-                            onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
-                        )
+                            )
+                        }
+                        item {
+                            PillButton(
+                                text = "背景",
+                                icon = Icons.Outlined.Image,
+                                color = accent,
+                                onClick = { showBackgroundSheet = true }
+                            )
+                        }
+                        item {
+                            PillButton(
+                                text = if (current.event.isPinned) "已置顶" else "置顶",
+                                icon = Icons.Filled.Flag,
+                                color = accent,
+                                onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
+                            )
+                        }
                     }
                 }
             }
@@ -309,7 +371,11 @@ fun ShowcaseScreen(
 }
 
 @Composable
-private fun ShowcasePage(item: EventWithNodes, captureLayer: GraphicsLayer?) {
+private fun ShowcasePage(
+    item: EventWithNodes,
+    captureLayer: GraphicsLayer?,
+    onCardHeight: (Int) -> Unit = {}
+) {
     val event = item.event
     val occ = event.occurrence()
     val accent = eventColor(event.colorIndex)
@@ -339,6 +405,7 @@ private fun ShowcasePage(item: EventWithNodes, captureLayer: GraphicsLayer?) {
             contentAlignment = Alignment.Center
         ) {
             ShowcaseCard(
+                modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
                 accent = accent,
                 numberText = if (periodMode) {
@@ -523,10 +590,11 @@ private fun ShowcaseCard(
     numberText: String,
     captionText: String,
     startLine: String,
+    modifier: Modifier = Modifier,
     onClickNumber: () -> Unit
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(Color(0xFFFDFBF7))

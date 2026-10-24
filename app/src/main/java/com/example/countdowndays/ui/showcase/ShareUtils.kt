@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -72,4 +73,16 @@ object ShareUtils {
 
     fun uriFor(context: Context, file: File): Uri =
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/**
+ * 上下对称裁到指定高度（px），用于生成比整屏更修长的分享图。
+ * 高度不小于原图时原样返回。
+ */
+fun ImageBitmap.cropCenterHeight(targetHeight: Int): ImageBitmap {
+    val src = asAndroidBitmap()
+    val height = targetHeight.coerceIn(1, src.height)
+    if (height >= src.height) return this
+    val top = (src.height - height) / 2
+    return Bitmap.createBitmap(src, 0, top, src.width, height).asImageBitmap()
 }
