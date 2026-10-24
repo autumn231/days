@@ -95,6 +95,7 @@ import com.example.countdowndays.util.ImageStorage
 import com.example.countdowndays.util.LunarCalendar
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.math.absoluteValue
 
@@ -208,135 +209,133 @@ fun ShowcaseScreen(
                 }
             }
         }
-
-        // 前景：顶栏与底部操作，浮在背景之上
-        Column(
-            Modifier
-                .fillMaxSize()
+        // 顶栏：只承担顶部内容，不再参与底部布局
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
                 .statusBarsPadding()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
-                        tint = Color.White
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = Color.White
+                )
+            }
+            Text(
+                text = "Days · 倒数日",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.weight(1f))
+            if (current != null) {
+                AnimatedContent(
+                    targetState = pagerState.currentPage,
+                    transitionSpec = {
+                        (slideInVertically(tween(200)) { it / 2 } + fadeIn(tween(200))) togetherWith
+                            (slideOutVertically(tween(200)) { -it / 2 } + fadeOut(tween(140)))
+                    },
+                    label = "pageIndex",
+                    modifier = Modifier.padding(end = 4.dp)
+                ) { page ->
+                    Text(
+                        text = "${page + 1} / ${events.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.75f)
                     )
                 }
-                Text(
-                    text = "Days · 倒数日",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.weight(1f))
-                if (current != null) {
-                    AnimatedContent(
-                        targetState = pagerState.currentPage,
-                        transitionSpec = {
-                            (slideInVertically(tween(200)) { it / 2 } + fadeIn(tween(200))) togetherWith
-                                (slideOutVertically(tween(200)) { -it / 2 } + fadeOut(tween(140)))
-                        },
-                        label = "pageIndex",
-                        modifier = Modifier.padding(end = 4.dp)
-                    ) { page ->
-                        Text(
-                            text = "${page + 1} / ${events.size}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                    IconButton(onClick = { onEdit(current.event.id) }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = Color.White)
-                    }
+                IconButton(onClick = { onEdit(current.event.id) }) {
+                    Icon(Icons.Filled.Edit, contentDescription = "编辑", tint = Color.White)
                 }
             }
+        }
 
-            Spacer(Modifier.weight(1f))
-
-            if (current == null) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color.White)
-                }
-                Spacer(Modifier.height(60.dp))
-            } else {
-                AnimatedVisibility(
-                    visible = chromeIn,
-                    enter = fadeIn(tween(320, delayMillis = 100)) +
-                        slideInVertically(tween(320, delayMillis = 100)) { it / 3 }
+        // 底部操作栏：锚在屏幕底部，切换卡片时位置不动
+        if (current == null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 40.dp)
+            ) {
+                CircularProgressIndicator(color = Color.White)
+            }
+        } else {
+            AnimatedVisibility(
+                visible = chromeIn,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(tween(320, delayMillis = 100)) +
+                    slideInVertically(tween(320, delayMillis = 100)) { it / 3 }
+            ) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 10.dp),
+                    contentPadding = PaddingValues(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(bottom = 10.dp),
-                        contentPadding = PaddingValues(horizontal = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item {
-                            PillButton(
-                                text = "分享",
-                                icon = Icons.Filled.Share,
-                                filled = true,
-                                color = accent,
-                                onClick = {
-                                    scope.launch {
-                                        runCatching { captureForShare() }
-                                            .onSuccess { bitmap ->
-                                                runCatching {
-                                                    ShareUtils.shareCard(context, bitmap, current.event.name)
-                                                }.onFailure {
-                                                    Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
-                                                }
+                    item {
+                        PillButton(
+                            text = "分享",
+                            icon = Icons.Filled.Share,
+                            filled = true,
+                            color = accent,
+                            onClick = {
+                                scope.launch {
+                                    runCatching { captureForShare() }
+                                        .onSuccess { bitmap ->
+                                            runCatching {
+                                                ShareUtils.shareCard(context, bitmap, current.event.name)
+                                            }.onFailure {
+                                                Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
                                             }
-                                    }
+                                        }
                                 }
-                            )
-                        }
-                        item {
-                            PillButton(
-                                text = "存为图片",
-                                icon = Icons.Filled.SaveAlt,
-                                color = accent,
-                                onClick = {
-                                    scope.launch {
-                                        runCatching { captureForShare() }
-                                            .onSuccess { bitmap ->
-                                                val ok = ShareUtils.saveToGallery(
-                                                    context, bitmap, "days_${System.currentTimeMillis()}"
-                                                )
-                                                Toast.makeText(
-                                                    context,
-                                                    if (ok) "已保存到相册" else "保存失败",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                    }
+                            }
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = "存为图片",
+                            icon = Icons.Filled.SaveAlt,
+                            color = accent,
+                            onClick = {
+                                scope.launch {
+                                    runCatching { captureForShare() }
+                                        .onSuccess { bitmap ->
+                                            val ok = ShareUtils.saveToGallery(
+                                                context, bitmap, "days_${System.currentTimeMillis()}"
+                                            )
+                                            Toast.makeText(
+                                                context,
+                                                if (ok) "已保存到相册" else "保存失败",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                 }
-                            )
-                        }
-                        item {
-                            PillButton(
-                                text = "背景",
-                                icon = Icons.Outlined.Image,
-                                color = accent,
-                                onClick = { showBackgroundSheet = true }
-                            )
-                        }
-                        item {
-                            PillButton(
-                                text = if (current.event.isPinned) "已置顶" else "置顶",
-                                icon = Icons.Filled.Flag,
-                                color = accent,
-                                onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
-                            )
-                        }
+                            }
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = "背景",
+                            icon = Icons.Outlined.Image,
+                            color = accent,
+                            onClick = { showBackgroundSheet = true }
+                        )
+                    }
+                    item {
+                        PillButton(
+                            text = if (current.event.isPinned) "已置顶" else "置顶",
+                            icon = Icons.Filled.Flag,
+                            color = accent,
+                            onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
+                        )
                     }
                 }
             }
@@ -420,7 +419,14 @@ private fun ShowcasePage(
                     else -> "天后"
                 },
                 startLine = buildString {
-                    append("起始日：")
+                    // 已经过去的日子明确标注，避免误读成未来的日期
+                    append(
+                        when {
+                            occ.ended -> "已经结束："
+                            !occ.isRepeating && occ.start.isBefore(LocalDate.now()) -> "已经过了："
+                            else -> "起始日："
+                        }
+                    )
                     append(DateUtils.formatIso(occ.start))
                     append("  ")
                     append(DateUtils.weekdayCn(occ.start))

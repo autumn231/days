@@ -152,6 +152,27 @@ class UiSmokeTest {
         snapshot("04_showcase_default")
     }
 
+    @Test
+    fun showcaseScreen_pastEventMarksDateAsPassed() {
+        val event = runBlocking {
+            app.container.repository.getActiveEvents().first { it.event.name == "哈哈" }
+        }
+        rule.setContent {
+            CountdownTheme(darkTheme = false) {
+                ShowcaseScreen(
+                    eventId = event.event.id,
+                    onBack = {},
+                    onEdit = {},
+                    onAddNew = {},
+                    captureEnabled = false
+                )
+            }
+        }
+        waitForText("已经过了")
+        assertTrue(hasText("已经过了"))
+        snapshot("05_showcase_past")
+    }
+
     private fun waitForText(text: String, timeoutMs: Long = 5_000) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
