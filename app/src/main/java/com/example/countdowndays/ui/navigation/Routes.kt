@@ -4,8 +4,12 @@ object Routes {
     const val MAIN = "main"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
+    const val CALENDAR = "calendar"
+    const val DATE_CALC = "datecalc"
+    const val ARCHIVE = "archive"
     const val ADD_EDIT = "add_edit?eventId={eventId}"
     const val DETAIL = "detail/{eventId}"
+    const val SHOWCASE = "showcase/{eventId}"
 
     const val ARG_EVENT_ID = "eventId"
 
@@ -13,4 +17,6 @@ object Routes {
         if (eventId == null) "add_edit?eventId=" else "add_edit?eventId=$eventId"
 
     fun detail(eventId: Long): String = "detail/$eventId"
+
+    fun showcase(eventId: Long): String = "showcase/$eventId"
 }

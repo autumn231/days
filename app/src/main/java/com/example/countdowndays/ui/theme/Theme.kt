@@ -3,7 +3,9 @@ package com.example.countdowndays.ui.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -12,58 +14,76 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
 private val LightColors = lightColorScheme(
-    primary = md_primary,
-    onPrimary = md_onPrimary,
-    primaryContainer = md_primaryContainer,
-    onPrimaryContainer = md_onPrimaryContainer,
-    secondary = md_secondary,
-    onSecondary = md_onSecondary,
-    secondaryContainer = md_secondaryContainer,
-    onSecondaryContainer = md_onSecondaryContainer,
-    tertiary = md_tertiary,
-    background = md_background,
-    onBackground = md_onBackground,
-    surface = md_surface,
-    onSurface = md_onSurface,
-    surfaceVariant = md_surfaceVariant,
-    onSurfaceVariant = md_onSurfaceVariant,
-    outline = md_outline,
-    outlineVariant = md_outlineVariant,
-    error = md_error,
-    surfaceContainer = md_surfaceContainer,
-    surfaceContainerHigh = md_surfaceContainerHigh
+    primary = WarmPrimary,
+    onPrimary = WarmOnPrimary,
+    primaryContainer = WarmPrimaryContainer,
+    onPrimaryContainer = WarmOnPrimaryContainer,
+    secondary = WarmSecondary,
+    onSecondary = WarmOnSecondary,
+    secondaryContainer = WarmSecondaryContainer,
+    onSecondaryContainer = WarmOnSecondaryContainer,
+    tertiary = WarmTertiary,
+    onTertiary = WarmOnTertiary,
+    tertiaryContainer = WarmTertiaryContainer,
+    onTertiaryContainer = WarmOnTertiaryContainer,
+    background = WarmBackground,
+    onBackground = WarmOnBackground,
+    surface = WarmSurface,
+    onSurface = WarmOnSurface,
+    surfaceVariant = WarmSurfaceVariant,
+    onSurfaceVariant = WarmOnSurfaceVariant,
+    outline = WarmOutline,
+    outlineVariant = WarmOutlineVariant,
+    error = WarmError,
+    onError = WarmOnError,
+    surfaceContainer = WarmSurfaceContainer,
+    surfaceContainerHigh = WarmSurfaceContainerHigh
 )
 
 private val DarkColors = darkColorScheme(
-    primary = md_primary_dark,
-    onPrimary = md_onPrimary_dark,
-    primaryContainer = md_primaryContainer_dark,
-    onPrimaryContainer = md_onPrimaryContainer_dark,
-    secondary = md_secondary_dark,
-    onSecondary = md_onSecondary_dark,
-    secondaryContainer = md_secondaryContainer_dark,
-    onSecondaryContainer = md_onSecondaryContainer_dark,
-    tertiary = md_tertiary_dark,
-    background = md_background_dark,
-    onBackground = md_onBackground_dark,
-    surface = md_surface_dark,
-    onSurface = md_onSurface_dark,
-    surfaceVariant = md_surfaceVariant_dark,
-    onSurfaceVariant = md_onSurfaceVariant_dark,
-    outline = md_outline_dark,
-    outlineVariant = md_outlineVariant_dark,
-    error = md_error_dark,
-    surfaceContainer = md_surfaceContainer_dark,
-    surfaceContainerHigh = md_surfaceContainerHigh_dark
+    primary = WarmPrimaryDark,
+    onPrimary = WarmOnPrimaryDark,
+    primaryContainer = WarmPrimaryContainerDark,
+    onPrimaryContainer = WarmOnPrimaryContainerDark,
+    secondary = WarmSecondaryDark,
+    onSecondary = WarmOnSecondaryDark,
+    secondaryContainer = WarmSecondaryContainerDark,
+    onSecondaryContainer = WarmOnSecondaryContainerDark,
+    tertiary = WarmTertiaryDark,
+    onTertiary = WarmOnTertiaryDark,
+    tertiaryContainer = WarmTertiaryContainerDark,
+    onTertiaryContainer = WarmOnTertiaryContainerDark,
+    background = WarmBackgroundDark,
+    onBackground = WarmOnBackgroundDark,
+    surface = WarmSurfaceDark,
+    onSurface = WarmOnSurfaceDark,
+    surfaceVariant = WarmSurfaceVariantDark,
+    onSurfaceVariant = WarmOnSurfaceVariantDark,
+    outline = WarmOutlineDark,
+    outlineVariant = WarmOutlineVariantDark,
+    error = WarmErrorDark,
+    onError = WarmOnErrorDark,
+    surfaceContainer = WarmSurfaceContainerDark,
+    surfaceContainerHigh = WarmSurfaceContainerHighDark
+)
+
+val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp)
 )
 
 @Composable
 fun CountdownTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    /** 默认关闭动态取色，保证品牌色一致；设置里可再打开 */
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -79,15 +99,17 @@ fun CountdownTheme(
         SideEffect {
             val window = (view.context as Activity).window
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            val controller = WindowCompat.getInsetsController(window, view)
-            controller.isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
         }
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }

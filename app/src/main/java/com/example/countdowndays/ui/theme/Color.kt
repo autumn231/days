@@ -2,46 +2,78 @@ package com.example.countdowndays.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// 浅色：柔和现代的紫蓝调，搭配暖色强调
-val md_primary = Color(0xFF6750A4)
-val md_onPrimary = Color(0xFFFFFFFF)
-val md_primaryContainer = Color(0xFFEADDFF)
-val md_onPrimaryContainer = Color(0xFF21005D)
-val md_secondary = Color(0xFF625B71)
-val md_onSecondary = Color(0xFFFFFFFF)
-val md_secondaryContainer = Color(0xFFE8DEF8)
-val md_onSecondaryContainer = Color(0xFF1D192B)
-val md_tertiary = Color(0xFF7D5260)
-val md_background = Color(0xFFFEF7FF)
-val md_onBackground = Color(0xFF1D1B20)
-val md_surface = Color(0xFFFEF7FF)
-val md_onSurface = Color(0xFF1D1B20)
-val md_surfaceVariant = Color(0xFFE7E0EC)
-val md_onSurfaceVariant = Color(0xFF49454F)
-val md_outline = Color(0xFF79747E)
-val md_outlineVariant = Color(0xFFCAC4D0)
-val md_error = Color(0xFFB3261E)
-val md_surfaceContainer = Color(0xFFF3EDF7)
-val md_surfaceContainerHigh = Color(0xFFECE6F0)
+// ---------- 浅色：奶油底 + 暖橙主色 ----------
+val WarmPrimary = Color(0xFFE0612E)
+val WarmOnPrimary = Color(0xFFFFFFFF)
+val WarmPrimaryContainer = Color(0xFFFFDBCB)
+val WarmOnPrimaryContainer = Color(0xFF3A1200)
 
-// 深色
-val md_primary_dark = Color(0xFFD0BCFF)
-val md_onPrimary_dark = Color(0xFF381E72)
-val md_primaryContainer_dark = Color(0xFF4F378B)
-val md_onPrimaryContainer_dark = Color(0xFFEADDFF)
-val md_secondary_dark = Color(0xFFCCC2DC)
-val md_onSecondary_dark = Color(0xFF332D41)
-val md_secondaryContainer_dark = Color(0xFF4A4458)
-val md_onSecondaryContainer_dark = Color(0xFFE8DEF8)
-val md_tertiary_dark = Color(0xFFEFB8C8)
-val md_background_dark = Color(0xFF141218)
-val md_onBackground_dark = Color(0xFFE6E0E9)
-val md_surface_dark = Color(0xFF141218)
-val md_onSurface_dark = Color(0xFFE6E0E9)
-val md_surfaceVariant_dark = Color(0xFF49454F)
-val md_onSurfaceVariant_dark = Color(0xFFCAC4D0)
-val md_outline_dark = Color(0xFF938F99)
-val md_outlineVariant_dark = Color(0xFF49454F)
-val md_error_dark = Color(0xFFF2B8B5)
-val md_surfaceContainer_dark = Color(0xFF211F26)
-val md_surfaceContainerHigh_dark = Color(0xFF2B2930)
+val WarmSecondary = Color(0xFF7A6A5C)
+val WarmOnSecondary = Color(0xFFFFFFFF)
+val WarmSecondaryContainer = Color(0xFFF0E4D8)
+val WarmOnSecondaryContainer = Color(0xFF28180E)
+
+val WarmTertiary = Color(0xFF2F6F62)
+val WarmOnTertiary = Color(0xFFFFFFFF)
+val WarmTertiaryContainer = Color(0xFFB8E8DC)
+val WarmOnTertiaryContainer = Color(0xFF00201A)
+
+val WarmBackground = Color(0xFFFBF8F4)
+val WarmOnBackground = Color(0xFF1F1B16)
+val WarmSurface = Color(0xFFFFFDFA)
+val WarmOnSurface = Color(0xFF1F1B16)
+val WarmSurfaceVariant = Color(0xFFF1EAE1)
+val WarmOnSurfaceVariant = Color(0xFF544840)
+val WarmOutline = Color(0xFF8C7B6B)
+val WarmOutlineVariant = Color(0xFFE5DACE)
+val WarmError = Color(0xFFB3261E)
+val WarmOnError = Color(0xFFFFFFFF)
+val WarmSurfaceContainer = Color(0xFFF5EFE7)
+val WarmSurfaceContainerHigh = Color(0xFFEDE3D8)
+
+// ---------- 深色：暖黑 ----------
+val WarmPrimaryDark = Color(0xFFFFB596)
+val WarmOnPrimaryDark = Color(0xFF562000)
+val WarmPrimaryContainerDark = Color(0xFF7A3410)
+val WarmOnPrimaryContainerDark = Color(0xFFFFDBCB)
+
+val WarmSecondaryDark = Color(0xFFD8C6B6)
+val WarmOnSecondaryDark = Color(0xFF3B2E22)
+val WarmSecondaryContainerDark = Color(0xFF524437)
+val WarmOnSecondaryContainerDark = Color(0xFFF0E4D8)
+
+val WarmTertiaryDark = Color(0xFF9CD3C7)
+val WarmOnTertiaryDark = Color(0xFF003731)
+val WarmTertiaryContainerDark = Color(0xFF16544A)
+val WarmOnTertiaryContainerDark = Color(0xFFB8E8DC)
+
+val WarmBackgroundDark = Color(0xFF15120F)
+val WarmOnBackgroundDark = Color(0xFFEDE4DA)
+val WarmSurfaceDark = Color(0xFF1C1815)
+val WarmOnSurfaceDark = Color(0xFFEDE4DA)
+val WarmSurfaceVariantDark = Color(0xFF3A332C)
+val WarmOnSurfaceVariantDark = Color(0xFFD3C5B7)
+val WarmOutlineDark = Color(0xFF9C8B7B)
+val WarmOutlineVariantDark = Color(0xFF4A4138)
+val WarmErrorDark = Color(0xFFFFB4AB)
+val WarmOnErrorDark = Color(0xFF690005)
+val WarmSurfaceContainerDark = Color(0xFF231E19)
+val WarmSurfaceContainerHighDark = Color(0xFF2E2822)
+
+/** 事件卡片可选的强调色（索引持久化在 EventEntity.colorIndex） */
+val EventPalette: List<Color> = listOf(
+    Color(0xFFE0612E),
+    Color(0xFFD14C67),
+    Color(0xFF7357D6),
+    Color(0xFF3B7DD8),
+    Color(0xFF2C8F84),
+    Color(0xFF5C8F45),
+    Color(0xFFB9862B),
+    Color(0xFF5A5A66)
+)
+
+fun eventColor(index: Int): Color = EventPalette[index.coerceIn(0, EventPalette.lastIndex)]
+
+/** 卡片淡底色 */
+fun eventTint(index: Int, dark: Boolean): Color =
+    eventColor(index).copy(alpha = if (dark) 0.18f else 0.12f)

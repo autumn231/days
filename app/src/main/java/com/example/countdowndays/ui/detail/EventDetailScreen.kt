@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
@@ -81,6 +82,7 @@ fun EventDetailScreen(
     eventId: Long,
     onBack: () -> Unit,
     onEdit: (Long) -> Unit,
+    onShowcase: (Long) -> Unit,
     vm: EventDetailViewModel = com.example.countdowndays.ui.common.appViewModel {
         EventDetailViewModel(it.repository)
     }
@@ -110,6 +112,9 @@ fun EventDetailScreen(
                                 tint = if (ew.event.isPinned) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        IconButton(onClick = { onShowcase(ew.event.id) }) {
+                            Icon(Icons.Filled.Fullscreen, contentDescription = "全屏展示")
                         }
                         IconButton(onClick = { onEdit(ew.event.id) }) {
                             Icon(Icons.Filled.Edit, contentDescription = "编辑")

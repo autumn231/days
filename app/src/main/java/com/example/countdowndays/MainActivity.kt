@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.countdowndays.ui.navigation.AppNav
 import com.example.countdowndays.ui.theme.CountdownTheme
@@ -15,18 +18,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val prefs = (application as CountdownApp).container.prefs
+        val container = (application as CountdownApp).container
+        val prefs = container.prefs
+        val initialEventId = intent?.getLongExtra("open_event_id", 0L)?.takeIf { it > 0L }
+
         setContent {
-            // 订阅用户选择的主题模式，切换后实时生效
             val mode by prefs.themeMode.collectAsStateWithLifecycle()
+            val dynamic by prefs.dynamicColor.collectAsStateWithLifecycle()
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (mode) {
                 ThemeMode.SYSTEM -> systemDark
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
-            CountdownTheme(darkTheme = darkTheme) {
-                AppNav()
+            var pendingEventId by remember { mutableStateOf(initialEventId) }
+
+            CountdownTheme(darkTheme = darkTheme, dynamicColor = dynamic) {
+                AppNav(
+                    startEventId = pendingEventId,
+                    onStartEventHandled = { pendingEventId = null }
+                )
             }
         }
     }

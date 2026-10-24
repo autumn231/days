@@ -73,4 +73,13 @@ object ImageStorage {
         if (path.isNullOrEmpty()) return
         runCatching { File(path).takeIf { it.exists() }?.delete() }
     }
+
+    /** 删除所有不在 keep 集合里的图片（保留仍在使用的） */
+    fun cleanupOrphans(context: Context, keep: Set<String>) {
+        runCatching {
+            dir(context).listFiles()?.forEach { file ->
+                if (file.absolutePath !in keep) file.delete()
+            }
+        }
+    }
 }

@@ -13,16 +13,21 @@ import kotlinx.coroutines.flow.Flow
 interface EventDao {
 
     @Transaction
-    @Query(
-        "SELECT * FROM events ORDER BY is_pinned DESC, date ASC, createdAt ASC"
-    )
+    @Query("SELECT * FROM events WHERE archived = 0 ORDER BY is_pinned DESC, sortOrder ASC, date ASC, createdAt ASC")
+    fun observeActiveEvents(): Flow<List<EventWithNodes>>
+
+    @Transaction
+    @Query("SELECT * FROM events ORDER BY is_pinned DESC, sortOrder ASC, date ASC, createdAt ASC")
     fun observeAllEventsWithNodes(): Flow<List<EventWithNodes>>
 
     @Transaction
     @Query(
         """
         SELECT * FROM events
-        WHERE name LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%'
+        WHERE archived = 0 AND (
+            name LIKE '%' || :query || '%'
+            OR description LIKE '%' || :query || '%'
+        )
         ORDER BY is_pinned DESC, date ASC, createdAt ASC
         """
     )
@@ -31,6 +36,18 @@ interface EventDao {
     @Transaction
     @Query("SELECT * FROM events WHERE id = :id")
     fun observeEventWithNodes(id: Long): Flow<EventWithNodes?>
+
+    @Transaction
+    @Query("SELECT * FROM events WHERE id = :id")
+    suspend fun getEventWithNodes(id: Long): EventWithNodes?
+
+    @Transaction
+    @Query("SELECT * FROM events WHERE archived = 0")
+    suspend fun getActiveEvents(): List<EventWithNodes>
+
+    @Transaction
+    @Query("SELECT * FROM events")
+    suspend fun getAllEvents(): List<EventWithNodes>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: EventEntity): Long
@@ -44,6 +61,9 @@ interface EventDao {
     @Query("UPDATE events SET is_pinned = :pinned WHERE id = :id")
     suspend fun setPinned(id: Long, pinned: Boolean)
 
+    @Query("UPDATE events SET archived = :archived WHERE id = :id")
+    suspend fun setArchived(id: Long, archived: Boolean)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNode(node: TimelineNodeEntity): Long
 
@@ -52,4 +72,26 @@ interface EventDao {
 
     @Delete
     suspend fun deleteNode(node: TimelineNodeEntity)
+}
+
+@Dao
+interface CategoryDao {
+
+    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
+    fun observeAll(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
+    suspend fun getAll(): List<CategoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(category: CategoryEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(categories: List<CategoryEntity>)
+
+    @Query("DELETE FROM categories WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("UPDATE events SET categoryId = NULL WHERE categoryId = :id")
+    suspend fun detachEvents(id: Long)
 }
