@@ -24,6 +24,9 @@ object BackupManager {
     private const val ENTRY_CATEGORIES = "categories.json"
     private const val IMAGE_DIR = "images/"
 
+    /** 导入防护：解压出的图片总量上限，防选错文件把内部存储塞满 */
+    private const val MAX_IMAGE_BYTES = 200L * 1024 * 1024
+
     suspend fun export(context: Context, repo: EventRepository, uri: Uri): Boolean = runCatching {
         val events = repo.getAllEvents()
         val categories = repo.getCategories()
@@ -73,6 +76,7 @@ object BackupManager {
         val images = mutableMapOf<String, File>()
         val imageDir = File(context.filesDir, "images").apply { mkdirs() }
 
+        var totalImageBytes = 0L
         context.contentResolver.openInputStream(uri)?.use { stream ->
             ZipInputStream(stream).use { zip ->
                 var entry: ZipEntry? = zip.nextEntry
@@ -83,7 +87,10 @@ object BackupManager {
                         name == ENTRY_CATEGORIES -> categoriesJson = zip.readBytes().toString(Charsets.UTF_8)
                         name.startsWith(IMAGE_DIR) -> {
                             val target = File(imageDir, File(name).name)
-                            target.outputStream().use { out -> zip.copyTo(out) }
+                            target.outputStream().use { out -> totalImageBytes += zip.copyTo(out) }
+                            if (totalImageBytes > MAX_IMAGE_BYTES) {
+                                throw IllegalStateException("备份图片总量超过上限")
+                            }
                             images[File(name).name] = target
                         }
                     }

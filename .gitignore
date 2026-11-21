@@ -23,3 +23,7 @@ keystore.properties
 # Kotlin 构建缓存 / 本地发布产物
 .kotlin/
 /dist
+
+# IDE 目录只留本地
+.idea/
+.vscode/

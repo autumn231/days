@@ -1,11 +1,13 @@
 package com.example.countdowndays.data
 
+import androidx.room.withTransaction
 import com.example.countdowndays.util.ImageStorage
 import kotlinx.coroutines.flow.Flow
 
 class EventRepository(
     private val dao: EventDao,
-    private val categoryDao: CategoryDao
+    private val categoryDao: CategoryDao,
+    private val db: AppDatabase? = null
 ) {
 
     /** 数据变更后的回调（重排提醒、刷新小组件），由 AppContainer 注入 */
@@ -85,15 +87,32 @@ class EventRepository(
     }
 
     // ---------- 备份 / 恢复 ----------
+    /**
+     * 整体在一个事务里完成：分类先以新 id 插入并建立「备份 id -> 新 id」映射，
+     * 事件的 categoryId 按映射改写，避免撞上已有分类时覆盖改名或挂错分类；
+     * 中途失败则整体回滚，不留半套数据。
+     */
     suspend fun importData(events: List<EventWithNodes>, categories: List<CategoryEntity>) {
-        categoryDao.insertAll(categories)
+        if (db != null) {
+            db.withTransaction { doImport(events, categories) }
+        } else {
+            doImport(events, categories)
+        }
+        notifyChanged()
+    }
+
+    private suspend fun doImport(events: List<EventWithNodes>, categories: List<CategoryEntity>) {
+        val idMap = mutableMapOf<Long, Long>()
+        categories.forEach { c ->
+            idMap[c.id] = categoryDao.upsert(c.copy(id = 0))
+        }
         events.forEach { ew ->
-            val newId = dao.insertEvent(ew.event.copy(id = 0))
+            val mappedCategory = ew.event.categoryId?.let { idMap[it] }
+            val newId = dao.insertEvent(ew.event.copy(id = 0, categoryId = mappedCategory))
             ew.nodes.forEach { node ->
                 dao.insertNode(node.copy(id = 0, eventId = newId))
             }
         }
-        notifyChanged()
     }
 
     private fun notifyChanged() {

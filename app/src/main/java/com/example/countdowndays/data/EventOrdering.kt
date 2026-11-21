@@ -13,15 +13,13 @@ import kotlin.math.abs
  * 已经结束（不再发生）的事件用起始日排序，自然落在最左侧。
  */
 fun List<EventWithNodes>.sortedTimeline(today: LocalDate = LocalDate.now()): List<EventWithNodes> =
-    sortedWith(
-        compareBy(
-            { item ->
-                val occ = item.event.occurrence(today)
-                occ.next ?: occ.start
-            },
-            { it.event.id }
-        )
-    )
+    // 先把排序键算好再排：compareBy 的选择器会在每次比较时重跑，
+    // occurrence() 对农历事件还要走一遍 ICU 换算，不能放在比较器里反复算。
+    map { item ->
+        val occ = item.event.occurrence(today)
+        item to (occ.next ?: occ.start)
+    }.sortedWith(compareBy({ it.second }, { it.first.event.id }))
+        .map { it.first }
 
 /**
  * 离今天最近的一条的下标，作为两个卡片流的默认停留位置。

@@ -1,35 +1,27 @@
 package com.example.countdowndays.util
 
-import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 object DateUtils {
 
-    private val dateFmt = SimpleDateFormat("yyyy年MM月dd日", Locale.CHINA)
-    private val weekFmt = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.CHINA)
-    private val dateTimeFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+    // DateTimeFormatter 不可变且线程安全；旧实现用共享 SimpleDateFormat，
+    // 主线程与小组件/后台线程并发调用时可能打出错误日期。
+    private val dateFmt = DateTimeFormatter.ofPattern("yyyy年MM月dd日", Locale.CHINA)
+    private val weekFmt = DateTimeFormatter.ofPattern("yyyy年MM月dd日 EEEE", Locale.CHINA)
+    private val dateTimeFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.CHINA)
     private val isoFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.CHINA)
 
     private val weekNames = arrayOf("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
 
     /** 把时间戳对齐到当天 0 点 */
-    fun startOfDay(millis: Long): Long {
-        val c = Calendar.getInstance()
-        c.timeInMillis = millis
-        c.set(Calendar.HOUR_OF_DAY, 0)
-        c.set(Calendar.MINUTE, 0)
-        c.set(Calendar.SECOND, 0)
-        c.set(Calendar.MILLISECOND, 0)
-        return c.timeInMillis
-    }
+    fun startOfDay(millis: Long): Long = toMillis(toLocalDate(millis))
 
     fun todayMillis(): Long = startOfDay(System.currentTimeMillis())
 
@@ -64,11 +56,14 @@ object DateUtils {
         }
     }
 
-    fun formatDate(millis: Long): String = dateFmt.format(Date(millis))
+    private fun toLocalDateTime(millis: Long): LocalDateTime =
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
 
-    fun formatDateWithWeek(millis: Long): String = weekFmt.format(Date(millis))
+    fun formatDate(millis: Long): String = dateFmt.format(toLocalDateTime(millis))
 
-    fun formatDateTime(millis: Long): String = dateTimeFmt.format(Date(millis))
+    fun formatDateWithWeek(millis: Long): String = weekFmt.format(toLocalDateTime(millis))
+
+    fun formatDateTime(millis: Long): String = dateTimeFmt.format(toLocalDateTime(millis))
 
     fun formatIso(localDate: LocalDate): String = localDate.format(isoFmt)
 

@@ -27,8 +27,8 @@ android {
         applicationId = "com.example.countdowndays"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "3.6"
+        versionCode = 16
+        versionName = "3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -141,6 +141,5 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
-    debugImplementation(libs.androidx.ui.test.manifest)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

@@ -174,7 +174,10 @@ class AddEditEventViewModel(
                         isPinned = orig.isPinned,
                         createdAt = orig.createdAt,
                         archived = orig.archived,
-                        sortOrder = orig.sortOrder
+                        sortOrder = orig.sortOrder,
+                        // 编辑页不管这两项，必须从原记录保留，否则一保存就被清掉
+                        repeatEndDate = orig.repeatEndDate,
+                        backgroundPreset = orig.backgroundPreset
                     )
                 )
             }

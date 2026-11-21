@@ -29,7 +29,7 @@ class AppContainer(private val context: Context) {
 
     private val db = AppDatabase.get(context)
 
-    val repository = EventRepository(db.eventDao(), db.categoryDao())
+    val repository = EventRepository(db.eventDao(), db.categoryDao(), db)
     val prefs = PrefsManager(context)
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
