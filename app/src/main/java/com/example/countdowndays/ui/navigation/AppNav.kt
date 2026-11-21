@@ -1,10 +1,9 @@
 package com.example.countdowndays.ui.navigation
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
@@ -24,7 +23,10 @@ import com.example.countdowndays.ui.settings.SettingsScreen
 import com.example.countdowndays.ui.showcase.ShowcaseScreen
 import com.example.countdowndays.ui.tools.DateCalcScreen
 
-private const val DURATION = 260
+private const val DURATION = 350
+
+/** Material 3 强调缓动：起步快、收尾绵长，过场不生硬 */
+private val EmphasizedEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 @Composable
 fun AppNav(
@@ -44,19 +46,24 @@ fun AppNav(
     NavHost(
         navController = nav,
         startDestination = Routes.MAIN,
+        // 共享轴过场：新页从右侧 1/4 处滑入，旧页只反向挪 1/8 做视差，
+        // 两边同长同时、同一种缓动，进出严丝合缝；返回时镜像。
+        // 旧版混了缩放且进出时长不一致，衔接处会顿一下，这里一并去掉。
         enterTransition = {
-            slideInHorizontally(tween(DURATION)) { it / 5 } +
-                fadeIn(tween(DURATION)) +
-                scaleIn(tween(DURATION), initialScale = 0.96f)
+            slideInHorizontally(tween(DURATION, easing = EmphasizedEasing)) { it / 4 } +
+                fadeIn(tween(DURATION, easing = EmphasizedEasing))
         },
         exitTransition = {
-            fadeOut(tween(DURATION / 2)) + scaleOut(tween(DURATION), targetScale = 0.98f)
+            slideOutHorizontally(tween(DURATION, easing = EmphasizedEasing)) { -it / 8 } +
+                fadeOut(tween(DURATION, easing = EmphasizedEasing))
         },
         popEnterTransition = {
-            fadeIn(tween(DURATION / 2)) + scaleIn(tween(DURATION), initialScale = 0.98f)
+            slideInHorizontally(tween(DURATION, easing = EmphasizedEasing)) { -it / 8 } +
+                fadeIn(tween(DURATION, easing = EmphasizedEasing))
         },
         popExitTransition = {
-            slideOutHorizontally(tween(DURATION)) { it / 5 } + fadeOut(tween(DURATION))
+            slideOutHorizontally(tween(DURATION, easing = EmphasizedEasing)) { it / 4 } +
+                fadeOut(tween(DURATION, easing = EmphasizedEasing))
         }
     ) {
 

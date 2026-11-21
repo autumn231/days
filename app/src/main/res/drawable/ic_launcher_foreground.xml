@@ -4,41 +4,28 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 治愈系简单像素小太阳，居中绘制于 108x108 安全区内 -->
+    <!-- 日历卡：奶油白卡身 + 墨色顶栏与装订环 + 橙色数字「1」（倒数到最重要的那一天） -->
 
-    <!-- 8 道光芒（暖橙像素方块），围绕中心 54,54 分布 -->
-    <path android:fillColor="#FFFFB74D" android:pathData="M51,28 h6 v8 h-6 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M51,72 h6 v8 h-6 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M28,51 h8 v6 h-8 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M72,51 h8 v6 h-8 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M36,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M66,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M36,66 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFB74D" android:pathData="M66,66 h6 v6 h-6 z" />
+    <!-- 卡身 -->
+    <path
+        android:fillColor="#FFFFFBF2"
+        android:pathData="M36,35 h36 a8,8 0 0 1 8,8 v30 a8,8 0 0 1 -8,8 h-36 a8,8 0 0 1 -8,-8 v-30 a8,8 0 0 1 8,-8 z" />
 
-    <!-- 太阳脸庞（暖黄圆，居中） -->
-    <path android:fillColor="#FFFFD54F"
-        android:pathData="M54,38 a16,16 0 1,0 0.01,0 z" />
+    <!-- 顶栏（仅顶部两角圆角） -->
+    <path
+        android:fillColor="#FF1F1B16"
+        android:pathData="M36,35 h36 a8,8 0 0 1 8,8 v5 h-52 v-5 a8,8 0 0 1 8,-8 z" />
 
-    <!-- 腮红（粉） -->
-    <path android:fillColor="#FFFFAB91"
-        android:pathData="M43,58 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
-    <path android:fillColor="#FFFFAB91"
-        android:pathData="M59,58 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
+    <!-- 装订环（骑在卡片上沿） -->
+    <path
+        android:fillColor="#FF1F1B16"
+        android:pathData="M38,43 v-9.5 a3.5,3.5 0 0 1 7,0 v9.5 z" />
+    <path
+        android:fillColor="#FF1F1B16"
+        android:pathData="M63,43 v-9.5 a3.5,3.5 0 0 1 7,0 v9.5 z" />
 
-    <!-- 眼睛（闭眼弯月，治愈微笑感） -->
-    <path android:fillColor="#FF6D4C41"
-        android:pathData="M45,52 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
-    <path android:fillColor="#FFFFD54F"
-        android:pathData="M45,51 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
-
-    <path android:fillColor="#FF6D4C41"
-        android:pathData="M57,52 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
-    <path android:fillColor="#FFFFD54F"
-        android:pathData="M57,51 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z" />
-
-    <!-- 微笑曲线 -->
-    <path android:fillColor="#00000000"
-        android:strokeColor="#FF6D4C41" android:strokeWidth="2" android:strokeLineCap="round"
-        android:pathData="M48,60 Q54,65 60,60" />
+    <!-- 数字 1 -->
+    <path
+        android:fillColor="#FFE0612E"
+        android:pathData="M44,61 L52,53 L60,53 L60,71 L64,71 L64,75 L44,75 L44,71 L52,71 L52,61 Z" />
 </vector>

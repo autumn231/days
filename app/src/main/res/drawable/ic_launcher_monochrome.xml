@@ -4,19 +4,10 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 治愈系简单太阳单色剪影，用于 Android 13+ 主题图标，系统会自动着色 -->
-
-    <!-- 光芒 -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M51,28 h6 v8 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M51,72 h6 v8 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M28,51 h8 v6 h-8 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M72,51 h8 v6 h-8 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M36,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M66,36 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M36,66 h6 v6 h-6 z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M66,66 h6 v6 h-6 z" />
-
-    <!-- 脸庞 -->
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M54,38 a16,16 0 1,0 0.01,0 z" />
+    <!-- 单色版（Android 13+ 主题图标用，系统自动着色）：
+         日历卡轮廓，顶栏分界槽与数字 1 以 evenOdd 镂空 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M36,35 h36 a8,8 0 0 1 8,8 v30 a8,8 0 0 1 -8,8 h-36 a8,8 0 0 1 -8,-8 v-30 a8,8 0 0 1 8,-8 z M28,47 h52 v3.5 h-52 z M44,61 L52,53 L60,53 L60,71 L64,71 L64,75 L44,75 L44,71 L52,71 L52,61 Z" />
 </vector>
