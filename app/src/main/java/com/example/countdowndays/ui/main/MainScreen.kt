@@ -309,15 +309,15 @@ fun MainScreen(
                         )
                     }
                 }
-                items(rows, key = { it.item.event.id }) { row ->
+                items(rows, key = { it.item.id }) { row ->
                     SwipeableEventRow(
                         row = row,
                         modifier = Modifier
                             .animateItem()
                             .padding(horizontal = 16.dp),
-                        onClick = { onOpenEvent(row.item.event.id) },
-                        onTogglePinned = { vm.togglePinned(row.item.event) },
-                        onArchive = { vm.setArchived(row.item.event, true) },
+                        onClick = { onOpenEvent(row.item.id) },
+                        onTogglePinned = { vm.togglePinned(row.item) },
+                        onArchive = { vm.setArchived(row.item, true) },
                         onDelete = { vm.delete(row.item) }
                     )
                 }
@@ -379,7 +379,7 @@ private fun SwipeableEventRow(
 /** 顶部焦点卡：所有事件排成一行，默认停在今天或离今天最近的那一张 */
 @Composable
 private fun HeroPager(
-    items: List<com.example.countdowndays.data.EventWithNodes>,
+    items: List<com.example.countdowndays.data.EventEntity>,
     onOpen: (Long) -> Unit,
     onShowcase: (Long) -> Unit
 ) {
@@ -424,8 +424,8 @@ private fun HeroPager(
                     scaleY = scale
                     alpha = enterAlpha * (1f - 0.45f * offset)
                 },
-                onClick = { onOpen(items[page].event.id) },
-                onShowcase = { onShowcase(items[page].event.id) }
+                onClick = { onOpen(items[page].id) },
+                onShowcase = { onShowcase(items[page].id) }
             )
         }
 
@@ -474,13 +474,13 @@ private fun HeroPager(
 
 @Composable
 private fun HeroCard(
-    item: com.example.countdowndays.data.EventWithNodes,
+    item: com.example.countdowndays.data.EventEntity,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onShowcase: () -> Unit
 ) {
-    val event = item.event
-    val occ = remember(item.event.id, item.event.date) { event.occurrence() }
+    val event = item
+    val occ = remember(item.id, item.date) { event.occurrence() }
     val accent = eventColor(event.colorIndex)
     val dark = MaterialTheme.colorScheme.surface.luminanceIsDark()
 

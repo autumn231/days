@@ -3,6 +3,7 @@ package com.example.countdowndays.data
 import androidx.room.withTransaction
 import com.example.countdowndays.util.ImageStorage
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class EventRepository(
     private val dao: EventDao,
@@ -26,6 +27,18 @@ class EventRepository(
     suspend fun getActiveEvents(): List<EventWithNodes> = dao.getActiveEvents()
 
     suspend fun getAllEvents(): List<EventWithNodes> = dao.getAllEvents()
+
+    // ---------- 轻量查询（不带时间线节点，供首页/搜索/小组件/提醒用） ----------
+
+    fun observeAllLight(): Flow<List<EventEntity>> = dao.observeActiveEventsLight()
+
+    fun observeSearchLight(query: String): Flow<List<EventEntity>> = dao.searchEventsLight(query)
+
+    suspend fun getActiveEventsLight(): List<EventEntity> = dao.getActiveEventsLight()
+
+    /** 事件 id -> 时间线节点数 */
+    fun observeNodeCounts(): Flow<Map<Long, Int>> =
+        dao.observeNodeCounts().map { list -> list.associate { it.eventId to it.cnt } }
 
     suspend fun addEvent(event: EventEntity): Long =
         dao.insertEvent(event).also { notifyChanged() }
@@ -82,7 +95,7 @@ class EventRepository(
     // ---------- 图片清理 ----------
     /** 删除不再被任何事件引用的图片（撤销删除留下的孤儿文件） */
     suspend fun cleanupOrphanImages(context: android.content.Context) {
-        val referenced = dao.getAllEvents().mapNotNull { it.event.imagePath }.toSet()
+        val referenced = dao.getAllEventsLight().mapNotNull { it.imagePath }.toSet()
         ImageStorage.cleanupOrphans(context, referenced)
     }
 

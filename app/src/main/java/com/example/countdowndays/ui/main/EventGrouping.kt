@@ -1,7 +1,7 @@
 package com.example.countdowndays.ui.main
 
+import com.example.countdowndays.data.EventEntity
 import com.example.countdowndays.data.EventOccurrence
-import com.example.countdowndays.data.EventWithNodes
 import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.util.SortMode
 import java.time.LocalDate
@@ -16,35 +16,35 @@ enum class EventBucket(val title: String) {
 }
 
 data class EventRow(
-    val item: EventWithNodes,
+    val item: EventEntity,
     val occ: EventOccurrence
 )
 
 /** 把事件按时距分桶，置顶单独成组；同组内按用户选择的排序方式排列 */
 fun groupEvents(
-    items: List<EventWithNodes>,
+    items: List<EventEntity>,
     sortMode: SortMode,
     categoryId: Long?,
     today: LocalDate = LocalDate.now()
 ): List<Pair<EventBucket, List<EventRow>>> {
     val rows = items.asSequence()
-        .filter { categoryId == null || it.event.categoryId == categoryId }
-        .map { EventRow(it, it.event.occurrence(today)) }
+        .filter { categoryId == null || it.categoryId == categoryId }
+        .map { EventRow(it, it.occurrence(today)) }
         .toList()
 
     fun sort(list: List<EventRow>): List<EventRow> = when (sortMode) {
         SortMode.DATE -> list.sortedWith(
             compareBy(
                 { it.occ.daysToNext ?: Long.MAX_VALUE },
-                { it.item.event.name }
+                { it.item.name }
             )
         )
-        SortMode.CREATED -> list.sortedByDescending { it.item.event.createdAt }
-        SortMode.NAME -> list.sortedBy { it.item.event.name }
+        SortMode.CREATED -> list.sortedByDescending { it.item.createdAt }
+        SortMode.NAME -> list.sortedBy { it.item.name }
     }
 
-    val pinned = sort(rows.filter { it.item.event.isPinned })
-    val rest = rows.filter { !it.item.event.isPinned }
+    val pinned = sort(rows.filter { it.item.isPinned })
+    val rest = rows.filter { !it.item.isPinned }
 
     val buckets = mutableListOf<Pair<EventBucket, List<EventRow>>>()
     if (pinned.isNotEmpty()) buckets += EventBucket.PINNED to pinned

@@ -61,7 +61,7 @@ fun EventCard(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val event = row.item.event
+    val event = row.item
     val occ = row.occ
     val accent = eventColor(event.colorIndex)
     var menuOpen by remember { mutableStateOf(false) }

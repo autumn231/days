@@ -41,49 +41,86 @@ object ReminderScheduler {
         manager.createNotificationChannel(channel)
     }
 
+    /**
+     * 已下发给 AlarmManager 的触发时刻快照（事件 id -> 触发毫秒，null 表示无闹钟）。
+     * rescheduleAll 改为增量式：只动快照与期望不一致的事件，
+     * 不再每次数据变更都把全部事件的闹钟取消重设一遍。
+     * 进程重启后快照为空，首轮会全量下发一次，与旧行为一致。
+     */
+    private val snapshotLock = Any()
+    private val scheduledTriggers = mutableMapOf<Long, Long?>()
+
     suspend fun rescheduleAll(context: Context, repo: EventRepository) {
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return
-        repo.getActiveEvents().map { it.event }.forEach { event ->
-            val pi = pendingIntent(context, event.id)
-            if (!event.reminderEnabled) {
-                alarms.cancel(pi)
-                return@forEach
+        val now = System.currentTimeMillis()
+        val desired = HashMap<Long, Long?>()
+        repo.getActiveEventsLight().forEach { event ->
+            desired[event.id] = if (event.reminderEnabled) {
+                nextTriggerMillis(event)?.takeIf { it > now }
+            } else {
+                null
             }
-            val triggerAt = nextTriggerMillis(event)
-            if (triggerAt == null || triggerAt <= System.currentTimeMillis()) {
-                alarms.cancel(pi)
-                return@forEach
+        }
+        synchronized(snapshotLock) {
+            // 已被删除（或已归档）的事件：取消它的闹钟
+            (scheduledTriggers.keys - desired.keys).toList().forEach { id ->
+                alarms.cancel(pendingIntent(context, id))
+                scheduledTriggers.remove(id)
             }
-            try {
-                if (canScheduleExact(alarms)) {
-                    alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
-                } else {
-                    alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            desired.forEach { (id, triggerAt) ->
+                if (id in scheduledTriggers && scheduledTriggers[id] == triggerAt) {
+                    return@forEach // 期望与已下发的一致，不动
                 }
-            } catch (e: SecurityException) {
-                // 没有精确闹钟权限时退化为普通闹钟
-                runCatching { alarms.set(AlarmManager.RTC_WAKEUP, triggerAt, pi) }
+                val pi = pendingIntent(context, id)
+                if (triggerAt == null) {
+                    alarms.cancel(pi)
+                } else {
+                    try {
+                        if (canScheduleExact(alarms)) {
+                            alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                        } else {
+                            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                        }
+                    } catch (e: SecurityException) {
+                        // 没有精确闹钟权限时退化为普通闹钟
+                        runCatching { alarms.set(AlarmManager.RTC_WAKEUP, triggerAt, pi) }
+                    }
+                }
+                scheduledTriggers[id] = triggerAt
             }
         }
     }
 
     /**
      * 下一次提醒触发的绝对时间；不会再触发则返回 null。
-     * 若今天的提醒时刻已经过去，就顺延到下一次发生日再算。
+     * 若当前发生日的提醒时刻已经过去，就顺延到下一次发生日再算。
      */
-    fun nextTriggerMillis(event: EventEntity, today: LocalDate = LocalDate.now()): Long? {
-        val now = System.currentTimeMillis()
+    fun nextTriggerMillis(event: EventEntity, today: LocalDate = LocalDate.now()): Long? =
+        nextTriggerMillis(event, today, System.currentTimeMillis())
+
+    /**
+     * 可测版本：nowMillis 显式传入。
+     *
+     * 逐个往后跳发生日找第一个还没到的提醒时刻。旧实现只试 2 次且基准日只 +1 天，
+     * 「重复事件 + 提前天数较大」时提醒时刻还没轮到就退出返回 null，
+     * rescheduleAll 会据此取消闹钟，后续提醒被整段丢掉。
+     * 一次性事件的发生日恒定，提醒时刻一过就没有下一次，直接返回 null。
+     */
+    internal fun nextTriggerMillis(event: EventEntity, today: LocalDate, nowMillis: Long): Long? {
         var base = today
-        repeat(2) {
-            val next = event.occurrence(base).next ?: return null
+        val maxAttempts = event.reminderAdvanceDays.coerceAtLeast(0) + 400
+        repeat(maxAttempts) {
+            val occ = event.occurrence(base)
+            val next = occ.next ?: return null
             val remindDate = next.minusDays(event.reminderAdvanceDays.toLong())
             val ts = remindDate
                 .atTime(event.reminderHour.coerceIn(0, 23), event.reminderMinute.coerceIn(0, 59))
                 .atZone(ZoneId.systemDefault())
                 .toInstant()
                 .toEpochMilli()
-            if (ts > now) return ts
-            base = base.plusDays(1)
+            if (ts > nowMillis) return ts
+            if (!occ.isRepeating) return null
+            base = next.plusDays(1)
         }
         return null
     }

@@ -42,7 +42,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.countdowndays.data.EventEntity
-import com.example.countdowndays.data.EventWithNodes
 import com.example.countdowndays.data.EventOccurrence
 import com.example.countdowndays.data.RepeatType
 import com.example.countdowndays.data.occurrence
@@ -67,17 +66,18 @@ fun CalendarScreen(
     }
 ) {
     val events by vm.events.collectAsStateWithLifecycle()
+    val nodeCounts by vm.nodeCounts.collectAsStateWithLifecycle()
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selected by remember { mutableStateOf<LocalDate?>(LocalDate.now()) }
 
     val byDay = remember(events, month) {
-        buildMap<LocalDate, MutableList<EventWithNodes>> {
+        buildMap<LocalDate, MutableList<EventEntity>> {
             val start = month.atDay(1)
             val end = month.atEndOfMonth()
             var day = start
             while (!day.isAfter(end)) {
                 events.forEach { item ->
-                    if (item.event.occursOn(day)) {
+                    if (item.occursOn(day)) {
                         getOrPut(day) { mutableListOf() }.add(item)
                     }
                 }
@@ -155,8 +155,12 @@ fun CalendarScreen(
                         )
                     }
                 } else {
-                    items(list, key = { it.event.id }) { item ->
-                        CalendarEventRow(item = item, date = sel) { onOpenEvent(item.event.id) }
+                    items(list, key = { it.id }) { item ->
+                        CalendarEventRow(
+                            item = item,
+                            date = sel,
+                            nodeCount = nodeCounts[item.id] ?: 0
+                        ) { onOpenEvent(item.id) }
                     }
                 }
             }
@@ -168,7 +172,7 @@ fun CalendarScreen(
 private fun MonthGrid(
     month: YearMonth,
     selected: LocalDate?,
-    byDay: Map<LocalDate, List<EventWithNodes>>,
+    byDay: Map<LocalDate, List<EventEntity>>,
     onSelect: (LocalDate) -> Unit
 ) {
     val first = month.atDay(1)
@@ -261,11 +265,12 @@ private fun DayCell(
 
 @Composable
 private fun CalendarEventRow(
-    item: EventWithNodes,
+    item: EventEntity,
     date: LocalDate,
+    nodeCount: Int,
     onClick: () -> Unit
 ) {
-    val event = item.event
+    val event = item
     val accent = eventColor(event.colorIndex)
     Surface(
         onClick = onClick,
@@ -304,7 +309,7 @@ private fun CalendarEventRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (item.nodes.isNotEmpty()) MiniTag("${item.nodes.size} 条时间线", accent)
+            if (nodeCount > 0) MiniTag("$nodeCount 条时间线", accent)
         }
     }
 }
@@ -331,4 +336,4 @@ fun EventEntity.occursOn(day: LocalDate): Boolean {
     }
 }
 
-private fun EventWithNodes.dayLabel(): EventOccurrence = event.occurrence()
+private fun EventEntity.dayLabel(): EventOccurrence = occurrence()

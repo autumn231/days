@@ -27,8 +27,8 @@ android {
         applicationId = "com.example.countdowndays"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "3.7"
+        versionCode = 17
+        versionName = "3.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -105,6 +105,11 @@ kotlin {
     }
 }
 
+ksp {
+    // 导出 Room schema 到 app/schemas（随仓库提交），供迁移审查与后续版本对照
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -128,7 +133,6 @@ dependencies {
     implementation(libs.coil.compose)
 
     implementation(libs.androidx.glance.appwidget)
-    implementation(libs.material)
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)

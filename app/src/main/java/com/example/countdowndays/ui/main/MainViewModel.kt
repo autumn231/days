@@ -33,17 +33,22 @@ class MainViewModel(
     val categories = repo.observeCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** 事件 id -> 时间线节点数（日历页标记用；首页列表本身走轻量查询不带节点） */
+    val nodeCounts: StateFlow<Map<Long, Int>> = repo.observeNodeCounts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val sortMode: StateFlow<SortMode> = prefs.sortMode
 
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-    val events: StateFlow<List<EventWithNodes>> =
+    val events: StateFlow<List<EventEntity>> =
         combine(
             // 只在用户输入时防抖；首次空查询立即出结果，避免打开首页空等 150ms
             _query.debounce { if (it.isEmpty()) 0L else 150L },
             _categoryId
         ) { q, c -> q to c }
             .flatMapLatest { (q, _) ->
-                if (q.isBlank()) repo.observeAll() else repo.observeSearch(q.trim())
+                // 首页与搜索只用事件本身，走不带时间线节点的轻量查询
+                if (q.isBlank()) repo.observeAllLight() else repo.observeSearchLight(q.trim())
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -70,9 +75,12 @@ class MainViewModel(
         viewModelScope.launch { repo.setArchived(event.id, archived) }
     }
 
-    fun delete(item: EventWithNodes) {
-        _lastDeleted.value = item
-        viewModelScope.launch { repo.deleteEvent(item.event) }
+    fun delete(item: EventEntity) {
+        viewModelScope.launch {
+            // 撤销删除要连时间线节点一起写回，先把完整记录取出来存好再删
+            _lastDeleted.value = repo.getEvent(item.id)
+            repo.deleteEvent(item)
+        }
     }
 
     fun undoDelete() {

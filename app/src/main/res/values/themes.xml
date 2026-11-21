@@ -1,3 +1,4 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.CountdownDays" parent="Theme.Material3.DayNight.NoActionBar" />
+    <!-- 界面全部由 Compose 绘制，平台主题只需提供窗口底座，不再依赖 Material 视图库 -->
+    <style name="Theme.CountdownDays" parent="android:Theme.Material.NoActionBar" />
 </resources>

@@ -49,6 +49,35 @@ interface EventDao {
     @Query("SELECT * FROM events")
     suspend fun getAllEvents(): List<EventWithNodes>
 
+    // ---------- 轻量查询（不带时间线节点） ----------
+    // 首页、搜索、小组件、提醒调度都只用事件本身，原先走 @Relation 查询会把
+    // 每个事件的全部时间线节点一起拉出来白白做 IO 和对象分配，这里拆开。
+
+    @Query("SELECT * FROM events WHERE archived = 0 ORDER BY is_pinned DESC, sortOrder ASC, date ASC, createdAt ASC")
+    fun observeActiveEventsLight(): Flow<List<EventEntity>>
+
+    @Query(
+        """
+        SELECT * FROM events
+        WHERE archived = 0 AND (
+            name LIKE '%' || :query || '%'
+            OR description LIKE '%' || :query || '%'
+        )
+        ORDER BY is_pinned DESC, date ASC, createdAt ASC
+        """
+    )
+    fun searchEventsLight(query: String): Flow<List<EventEntity>>
+
+    @Query("SELECT * FROM events WHERE archived = 0")
+    suspend fun getActiveEventsLight(): List<EventEntity>
+
+    @Query("SELECT * FROM events")
+    suspend fun getAllEventsLight(): List<EventEntity>
+
+    /** 每个事件的时间线节点数（日历页的「N 条时间线」标记用，只查计数不拉整行） */
+    @Query("SELECT eventId, COUNT(*) AS cnt FROM timeline_nodes GROUP BY eventId")
+    fun observeNodeCounts(): Flow<List<NodeCount>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: EventEntity): Long
 
@@ -73,6 +102,9 @@ interface EventDao {
     @Delete
     suspend fun deleteNode(node: TimelineNodeEntity)
 }
+
+/** 时间线节点计数投影（配合 EventDao.observeNodeCounts） */
+data class NodeCount(val eventId: Long, val cnt: Int)
 
 @Dao
 interface CategoryDao {

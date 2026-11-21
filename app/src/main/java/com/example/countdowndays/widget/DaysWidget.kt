@@ -40,8 +40,7 @@ class DaysWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as CountdownApp
         val rows = runCatching {
-            app.container.repository.getActiveEvents()
-                .map { it.event }
+            app.container.repository.getActiveEventsLight()
                 .map { it to it.occurrence() }
                 .sortedWith(
                     compareBy(
