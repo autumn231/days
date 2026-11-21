@@ -170,9 +170,12 @@ class UiSmokeTest {
                 )
             }
         }
-        // 默认显示「418 天前」，点数字切到「累计」时长后，上方才出现「已经过了」
-        waitForText("418")
-        rule.onNodeWithText("418").performClick()
+        // 默认显示「N 天前」，点数字切到「累计」时长后，上方才出现「已经过了」。
+        // 天数必须按当天动态算：写死数字只在写下它的那天成立（旧版写死 418，次日即挂）。
+        val expectedDays = java.time.temporal.ChronoUnit.DAYS
+            .between(LocalDate.of(2025, 9, 1), LocalDate.now()).toString()
+        waitForText(expectedDays)
+        rule.onNodeWithText(expectedDays).performClick()
         waitForText("已经过了")
         assertTrue(hasText("已经过了"))
         assertTrue(hasText("累计"))

@@ -26,6 +26,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.countdowndays.CountdownApp
 import com.example.countdowndays.MainActivity
+import com.example.countdowndays.R
 import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.ui.theme.eventColor
 import kotlin.math.abs
@@ -34,17 +35,6 @@ import kotlin.math.abs
  * 桌面小组件：显示最近的三个日子。
  * 不让用户配置，默认展示"最近"的三个，避免第一次添加时一片空白。
  */
-private val Bg = androidx.compose.ui.graphics.Color(0xFFFDFBF7)
-private val TextMain = androidx.compose.ui.graphics.Color(0xFF1F1B16)
-private val TextDim = androidx.compose.ui.graphics.Color(0xFF8C8173)
-private val Accent = androidx.compose.ui.graphics.Color(0xFFE0612E)
-
-// 深色模式配色（ColorProvider 的 day/night 双值，系统切换时自动跟随）
-private val BgNight = androidx.compose.ui.graphics.Color(0xFF211D19)
-private val TextMainNight = androidx.compose.ui.graphics.Color(0xFFF0E9DC)
-private val TextDimNight = androidx.compose.ui.graphics.Color(0xFFA79B8A)
-private val AccentNight = androidx.compose.ui.graphics.Color(0xFFF0764A)
-
 class DaysWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -66,7 +56,7 @@ class DaysWidget : GlanceAppWidget() {
                 Column(
                     modifier = GlanceModifier
                         .fillMaxSize()
-                        .background(ColorProvider(day = Bg, night = BgNight))
+                        .background(ColorProvider(R.color.widget_bg))
                         .padding(14.dp)
                         .clickable(actionStartActivity(android.content.Intent(context, MainActivity::class.java))),
                     verticalAlignment = Alignment.Top
@@ -76,7 +66,7 @@ class DaysWidget : GlanceAppWidget() {
                         style = TextStyle(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = ColorProvider(day = Accent, night = AccentNight)
+                            color = ColorProvider(R.color.widget_accent)
                         )
                     )
                     Spacer(GlanceModifier.height(8.dp))
@@ -86,7 +76,7 @@ class DaysWidget : GlanceAppWidget() {
                             text = "还没有记录的日子\n打开应用添加一个吧",
                             style = TextStyle(
                                 fontSize = 13.sp,
-                                color = ColorProvider(day = TextDim, night = TextDimNight)
+                                color = ColorProvider(R.color.widget_text_dim)
                             )
                         )
                     } else {
@@ -103,7 +93,7 @@ class DaysWidget : GlanceAppWidget() {
                                     modifier = GlanceModifier.defaultWeight(),
                                     style = TextStyle(
                                         fontSize = 14.sp,
-                                        color = ColorProvider(day = TextMain, night = TextMainNight)
+                                        color = ColorProvider(R.color.widget_text_main)
                                     )
                                 )
                                 Spacer(GlanceModifier.width(8.dp))
