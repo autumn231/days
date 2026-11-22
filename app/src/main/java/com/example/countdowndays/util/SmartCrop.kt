@@ -4,14 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.ui.BiasAlignment
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.nio.FloatBuffer
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
@@ -22,8 +17,8 @@ import kotlin.math.roundToInt
 /**
  * 内容感知裁切 + 卡片区域明暗分析（v3.16 起统一架构）：
  *
- * 主体检测改用端上小模型 U2-NetP（显著性检测，ONNX，4.7MB，rembg 同款轻量引擎，
- * Apache-2.0）经 ONNX Runtime 推理出主体掩膜，掩膜即「重要性图」——
+ * 主体检测改用端上小模型 U2-NetP（显著性检测，rembg 同款轻量引擎，Apache-2.0；
+ * 模型转 ncnn 格式 fp16 存储仅 2.3MB）经 ncnn 推理出主体掩膜，掩膜即「重要性图」——
  * 替代 v3.12–v3.15 手工合成的边缘+饱和度+肤色重要性图（那套求和式打分会被
  * 亮窗、条纹等强信号带偏，实测咖啡照片裁切窗顶格右移 0.79 vs 人脸 0.47；
  * 换掩膜后 U2-NetP 选窗 0.54）。模型/运行时不可用时回落手工重要性图，行为不劣于 v3.15。
@@ -56,30 +51,12 @@ object SmartCrop {
 
     private const val MODEL_INPUT = 320
 
-    // ---- ONNX 会话（懒加载单例，失败后不再重试，自动回落手工图） ----
+    // ---- ncnn 模型字节缓存（assets 里 param+bin 共约 2.3MB，读一次常驻） ----
     @Volatile
-    private var ortSession: OrtSession? = null
+    private var ncnnParam: ByteArray? = null
 
     @Volatile
-    private var ortFailed = false
-
-    private fun ensureSession(context: Context): OrtSession? {
-        ortSession?.let { return it }
-        if (ortFailed) return null
-        synchronized(this) {
-            ortSession?.let { return it }
-            return try {
-                val env = OrtEnvironment.getEnvironment()
-                val bytes = context.assets.open("u2netp.onnx").use { it.readBytes() }
-                val created = env.createSession(bytes, OrtSession.SessionOptions())
-                ortSession = created
-                created
-            } catch (t: Throwable) {
-                ortFailed = true
-                null
-            }
-        }
-    }
+    private var ncnnModel: ByteArray? = null
 
     /**
      * 分析照片在目标容器宽高比下的最佳裁切 + 卡片分区亮度。
@@ -115,57 +92,34 @@ object SmartCrop {
 
     // ---------------- 主体掩膜（U2-NetP） ----------------
 
-    /** 跑 U2-NetP 出显著性掩膜，缩成重要性图；失败返回 null 由调用方回落 */
+    /** 经 ncnn 跑 U2-NetP 出显著性掩膜，缩成重要性图；失败返回 null 由调用方回落 */
     private fun saliencyGrid(context: Context, file: File, photoW: Int, photoH: Int): Grid? {
-        val session = ensureSession(context) ?: return null
         return try {
-            val env = OrtEnvironment.getEnvironment()
-            // 解码并拉伸到模型输入 320×320（U2-Net 系标准预处理，与离线验证同口径）
+            val param = ncnnParam ?: context.assets.open("u2netp.ncnn.param").use { it.readBytes() }
+                .also { ncnnParam = it }
+            val model = ncnnModel ?: context.assets.open("u2netp.ncnn.bin").use { it.readBytes() }
+                .also { ncnnModel = it }
+            // 解码到不小于模型输入的尺寸即可，缩放到 320×320 在原生层做
             var sample = 1
             while (photoW / sample > MODEL_INPUT * 2 || photoH / sample > MODEL_INPUT * 2) sample *= 2
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            val src: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-            val inputBmp = Bitmap.createScaledBitmap(src, MODEL_INPUT, MODEL_INPUT, true)
-            if (inputBmp !== src) src.recycle()
-            val px = IntArray(MODEL_INPUT * MODEL_INPUT)
-            inputBmp.getPixels(px, 0, MODEL_INPUT, 0, 0, MODEL_INPUT, MODEL_INPUT)
-            inputBmp.recycle()
-
-            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
-            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
-            val data = FloatArray(3 * MODEL_INPUT * MODEL_INPUT)
-            val plane = MODEL_INPUT * MODEL_INPUT
-            for (i in px.indices) {
-                val c = px[i]
-                data[i] = ((c shr 16 and 0xFF) / 255f - mean[0]) / std[0]
-                data[plane + i] = ((c shr 8 and 0xFF) / 255f - mean[1]) / std[1]
-                data[2 * plane + i] = ((c and 0xFF) / 255f - mean[2]) / std[2]
+            var bmp: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+            if (bmp.config != Bitmap.Config.ARGB_8888) {
+                val converted = bmp.copy(Bitmap.Config.ARGB_8888, false)
+                bmp.recycle()
+                bmp = converted
             }
-            val inputName = session.inputNames.iterator().next()
-            val tensor = OnnxTensor.createTensor(
-                env, FloatBuffer.wrap(data), longArrayOf(1, 3, MODEL_INPUT.toLong(), MODEL_INPUT.toLong())
-            )
-            val mask = tensor.use {
-                session.run(Collections.singletonMap(inputName, it)).use { result ->
-                    @Suppress("UNCHECKED_CAST")
-                    val out = (result[0].value as Array<Array<Array<FloatArray>>>)[0][0]
-                    // min-max 归一化（与 U2-Net 官方后处理一致）
-                    var mn = Float.MAX_VALUE
-                    var mx = -Float.MAX_VALUE
-                    for (row in out) for (v in row) {
-                        if (v < mn) mn = v
-                        if (v > mx) mx = v
-                    }
-                    val range = max(mx - mn, 1e-8f)
-                    val flat = FloatArray(MODEL_INPUT * MODEL_INPUT)
-                    for (y in 0 until MODEL_INPUT) {
-                        for (x in 0 until MODEL_INPUT) {
-                            flat[y * MODEL_INPUT + x] = (out[y][x] - mn) / range
-                        }
-                    }
-                    flat
-                }
+            val mask = SaliencyNative.runMask(bmp, param, model)
+            bmp.recycle()
+            if (mask == null || mask.size != MODEL_INPUT * MODEL_INPUT) return null
+            // min-max 归一化（与 U2-Net 官方后处理一致；转换前后选窗一致性已离线验证）
+            var mn = Float.MAX_VALUE
+            var mx = -Float.MAX_VALUE
+            for (v in mask) {
+                if (v < mn) mn = v
+                if (v > mx) mx = v
             }
+            val range = max(mx - mn, 1e-8f)
             // 掩膜块平均缩到重要性图尺寸（保持照片宽高比）
             val gridW = GRID_SIZE
             val gridH = (GRID_SIZE.toFloat() * photoH / photoW).roundToInt().coerceIn(24, GRID_SIZE)
@@ -179,7 +133,7 @@ object SmartCrop {
                     var sum = 0f
                     var n = 0
                     for (y in y0 until y1) for (x in x0 until x1) {
-                        sum += mask[y * MODEL_INPUT + x]
+                        sum += (mask[y * MODEL_INPUT + x] - mn) / range
                         n++
                     }
                     values[gy * gridW + gx] = if (n > 0) sum / n else 0f
