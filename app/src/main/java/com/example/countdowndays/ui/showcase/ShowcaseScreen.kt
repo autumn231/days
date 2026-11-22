@@ -405,6 +405,10 @@ private fun ShowcasePage(
     val isPast = occ.ended || (!occ.isRepeating && occ.start.isBefore(LocalDate.now()))
     // 毛玻璃取样源：背景登记为 source，卡片用 hazeChild 采样背后的内容做模糊
     val hazeState = remember { HazeState() }
+    // 液态玻璃取样源：背景另录一份进图层，卡片用 AGSL 折射着色器采样（API 33+）
+    val liquidState = remember { LiquidGlassState() }
+    val liquidBackdropLayer = rememberGraphicsLayer()
+    liquidState.backdropLayer = liquidBackdropLayer
 
     Box(
         modifier = Modifier
@@ -420,7 +424,16 @@ private fun ShowcasePage(
                 }
             )
     ) {
-        ShowcaseBackground(item, sourceModifier = if (glassEnabled) Modifier.haze(hazeState) else Modifier)
+        ShowcaseBackground(
+            item,
+            sourceModifier = if (glassEnabled) {
+                Modifier.haze(hazeState).then(
+                    if (cardStyle == CardStyle.LIQUID) Modifier.liquidSource(liquidState) else Modifier
+                )
+            } else {
+                Modifier
+            }
+        )
 
         Box(
             modifier = Modifier
@@ -432,6 +445,7 @@ private fun ShowcasePage(
             ShowcaseCard(
                 cardStyle = cardStyle,
                 hazeState = if (glassEnabled) hazeState else null,
+                liquidState = if (glassEnabled) liquidState else null,
                 modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
                 accent = accent,
@@ -677,27 +691,49 @@ private fun ShowcaseCard(
     eyebrow: String? = null,
     cardStyle: CardStyle = CardStyle.PAPER,
     hazeState: HazeState? = null,
+    liquidState: LiquidGlassState? = null,
     onClickNumber: () -> Unit
 ) {
     val cardShape = RoundedCornerShape(18.dp)
     val glass = cardStyle != CardStyle.PAPER
+    // 玻璃模式下背景是照片、花纹杂，次级文字改用更深的暖灰，否则看不清（用户实测反馈）
+    val captionColor = if (glass) Color(0xFF6B5D4C) else Color(0xFF9C9284)
+    val startColor = if (glass) Color(0xFF615544) else Color(0xFF8C8175)
+    val promoNameColor = if (glass) Color(0xFF463C30) else Color(0xFF5E564C)
+    val promoSloganColor = if (glass) Color(0xFF71634F) else Color(0xFFA2988A)
+    val density = LocalDensity.current
+    val liquidEffectLayer = rememberGraphicsLayer()
+    val useLiquid = cardStyle == CardStyle.LIQUID && liquidGlassSupported && liquidState != null && hazeState != null
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
             .then(
                 when {
-                    // 毛玻璃：采样卡片背后的背景做模糊，叠奶白 tint
+                    // 毛玻璃：采样卡片背后的背景做模糊，叠奶白 tint（v3.13 起加厚，保文字可读）
                     cardStyle == CardStyle.FROSTED && hazeState != null -> Modifier.hazeChild(
                         state = hazeState,
                         style = HazeStyle(
                             backgroundColor = Color(0xFFFDFBF7),
-                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.42f)),
+                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.55f)),
                             blurRadius = 24.dp,
                             noiseFactor = 0.03f
                         )
                     )
-                    // 液态玻璃：tint 更薄、玻璃更透，质感靠高光与亮边（见下方）
+                    // 液态玻璃（真折射，API 33+）：垫一层浅底兜底，玻璃本体由 AGSL 折射着色器画
+                    useLiquid -> Modifier
+                        .background(Color(0xFFFDFBF7).copy(alpha = 0.45f))
+                        .liquidGlass(
+                            state = liquidState!!,
+                            effectLayer = liquidEffectLayer,
+                            shape = cardShape,
+                            cornerRadiusPx = with(density) { 18.dp.toPx() },
+                            tint = Color.White.copy(alpha = 0.16f),
+                            blurRadiusPx = with(density) { 8.dp.toPx() },
+                            refractionHeightPx = with(density) { 30.dp.toPx() },
+                            refractionAmountPx = with(density) { 22.dp.toPx() }
+                        )
+                    // 液态玻璃降级（API < 33）：退回 haze 模糊 + 薄 tint 的近似
                     cardStyle == CardStyle.LIQUID && hazeState != null -> Modifier.hazeChild(
                         state = hazeState,
                         style = HazeStyle(
@@ -782,7 +818,7 @@ private fun ShowcaseCard(
                         Text(
                             text = eyebrow,
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFF9C9284),
+                            color = captionColor,
                             letterSpacing = 4.sp
                         )
                         Spacer(Modifier.height(8.dp))
@@ -798,7 +834,7 @@ private fun ShowcaseCard(
                     Text(
                         text = captionText,
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF9C9284),
+                        color = captionColor,
                         letterSpacing = 4.sp
                     )
                 }
@@ -814,7 +850,7 @@ private fun ShowcaseCard(
                 .fillMaxWidth()
                 .padding(vertical = 16.dp, horizontal = 20.dp),
             style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 1.2.sp),
-            color = Color(0xFF8C8175),
+            color = startColor,
             textAlign = TextAlign.Center
         )
 
@@ -852,14 +888,14 @@ private fun ShowcaseCard(
             Text(
                 text = "倒数日",
                 style = MaterialTheme.typography.labelLarge,
-                color = Color(0xFF5E564C),
+                color = promoNameColor,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.weight(1f))
             Text(
                 text = "记录每一个重要的日子",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFA2988A)
+                color = promoSloganColor
             )
         }
     }
