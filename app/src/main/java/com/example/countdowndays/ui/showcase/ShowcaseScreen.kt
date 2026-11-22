@@ -663,7 +663,7 @@ private fun BackgroundSheet(
             )
         }
         Text(
-            text = "素纸是原来的实色卡；毛玻璃、液态玻璃会实时模糊卡片背后的背景。卡片效果对所有事件生效。",
+            text = "素纸是原来的实色卡；毛玻璃是浅色模糊；液态玻璃是深色折射、白字。卡片效果对所有事件生效。",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 12.dp)
@@ -695,12 +695,36 @@ private fun ShowcaseCard(
     onClickNumber: () -> Unit
 ) {
     val cardShape = RoundedCornerShape(18.dp)
-    val glass = cardStyle != CardStyle.PAPER
-    // 玻璃模式下背景是照片、花纹杂，次级文字改用更深的暖灰，否则看不清（用户实测反馈）
-    val captionColor = if (glass) Color(0xFF6B5D4C) else Color(0xFF9C9284)
-    val startColor = if (glass) Color(0xFF615544) else Color(0xFF8C8175)
-    val promoNameColor = if (glass) Color(0xFF463C30) else Color(0xFF5E564C)
-    val promoSloganColor = if (glass) Color(0xFF71634F) else Color(0xFFA2988A)
+    // 三种效果各用一套字色（用户定）：素纸浅灰、毛玻璃深暖灰、液态「深邃玻璃」配白字
+    val numberColor = when (cardStyle) {
+        CardStyle.PAPER, CardStyle.FROSTED -> Color(0xFF3A3530)
+        CardStyle.LIQUID -> Color.White
+    }
+    val captionColor = when (cardStyle) {
+        CardStyle.PAPER -> Color(0xFF9C9284)
+        CardStyle.FROSTED -> Color(0xFF6B5D4C)
+        CardStyle.LIQUID -> Color(0xFFEEE9E0)
+    }
+    val startColor = when (cardStyle) {
+        CardStyle.PAPER -> Color(0xFF8C8175)
+        CardStyle.FROSTED -> Color(0xFF615544)
+        CardStyle.LIQUID -> Color(0xFFDDD6C9)
+    }
+    val promoNameColor = when (cardStyle) {
+        CardStyle.PAPER -> Color(0xFF5E564C)
+        CardStyle.FROSTED -> Color(0xFF463C30)
+        CardStyle.LIQUID -> Color.White
+    }
+    val promoSloganColor = when (cardStyle) {
+        CardStyle.PAPER -> Color(0xFFA2988A)
+        CardStyle.FROSTED -> Color(0xFF71634F)
+        CardStyle.LIQUID -> Color(0xFFCFC8BA)
+    }
+    val dividerColor = when (cardStyle) {
+        CardStyle.PAPER -> Color(0xFFEDE6DA)
+        CardStyle.FROSTED -> Color(0xFF3A3530).copy(alpha = 0.08f)
+        CardStyle.LIQUID -> Color.White.copy(alpha = 0.16f)
+    }
     val density = LocalDensity.current
     val liquidEffectLayer = rememberGraphicsLayer()
     val useLiquid = cardStyle == CardStyle.LIQUID && liquidGlassSupported && liquidState != null && hazeState != null
@@ -710,35 +734,36 @@ private fun ShowcaseCard(
             .clip(cardShape)
             .then(
                 when {
-                    // 毛玻璃：采样卡片背后的背景做模糊，叠奶白 tint（v3.13 起加厚，保文字可读）
+                    // 毛玻璃：采样卡片背后的背景做模糊，叠奶白 tint（字色另行加深，不靠加厚 tint）
                     cardStyle == CardStyle.FROSTED && hazeState != null -> Modifier.hazeChild(
                         state = hazeState,
                         style = HazeStyle(
                             backgroundColor = Color(0xFFFDFBF7),
-                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.55f)),
+                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.42f)),
                             blurRadius = 24.dp,
                             noiseFactor = 0.03f
                         )
                     )
-                    // 液态玻璃（真折射，API 33+）：垫一层浅底兜底，玻璃本体由 AGSL 折射着色器画
+                    // 液态玻璃「深邃」（真折射，API 33+）：折射之上压一层深色 tint 配白字，
+                    // 不再叠白色高光/描边（v3.13 的白边被用户否掉）
                     useLiquid -> Modifier
-                        .background(Color(0xFFFDFBF7).copy(alpha = 0.45f))
+                        .background(Color(0xFF141416).copy(alpha = 0.72f))
                         .liquidGlass(
                             state = liquidState!!,
                             effectLayer = liquidEffectLayer,
                             shape = cardShape,
                             cornerRadiusPx = with(density) { 18.dp.toPx() },
-                            tint = Color.White.copy(alpha = 0.16f),
+                            tint = Color.Black.copy(alpha = 0.30f),
                             blurRadiusPx = with(density) { 8.dp.toPx() },
                             refractionHeightPx = with(density) { 30.dp.toPx() },
                             refractionAmountPx = with(density) { 22.dp.toPx() }
                         )
-                    // 液态玻璃降级（API < 33）：退回 haze 模糊 + 薄 tint 的近似
+                    // 液态玻璃降级（API < 33）：haze 模糊 + 深色 tint 的近似
                     cardStyle == CardStyle.LIQUID && hazeState != null -> Modifier.hazeChild(
                         state = hazeState,
                         style = HazeStyle(
-                            backgroundColor = Color(0xFFFDFBF7),
-                            tint = HazeTint(Color.White.copy(alpha = 0.14f)),
+                            backgroundColor = Color(0xFF1B1B1F),
+                            tint = HazeTint(Color.Black.copy(alpha = 0.28f)),
                             blurRadius = 18.dp,
                             noiseFactor = 0.02f
                         )
@@ -747,34 +772,6 @@ private fun ShowcaseCard(
                     cardStyle == CardStyle.PAPER -> Modifier.background(Color(0xFFFDFBF7))
                     // 玻璃降级（单测等无 haze 场景）：半透奶白，不至于穿帮
                     else -> Modifier.background(Color(0xFFFDFBF7).copy(alpha = 0.85f))
-                }
-            )
-            .then(
-                if (cardStyle == CardStyle.LIQUID) {
-                    Modifier
-                        // 顶部高光：上亮下透的微光泽
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.26f),
-                                    Color.White.copy(alpha = 0.05f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                        // 渐变亮边：上沿最亮，模拟玻璃边缘折光
-                        .border(
-                            1.2.dp,
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.White.copy(alpha = 0.75f),
-                                    Color.White.copy(alpha = 0.12f)
-                                )
-                            ),
-                            cardShape
-                        )
-                } else {
-                    Modifier
                 }
             )
     ) {
@@ -827,7 +824,7 @@ private fun ShowcaseCard(
                         text = text,
                         fontFamily = FontFamily.Serif,
                         fontSize = if (text.length > 6) 42.sp else 100.sp,
-                        color = Color(0xFF3A3530),
+                        color = numberColor,
                         lineHeight = if (text.length > 6) 56.sp else 112.sp,
                         textAlign = TextAlign.Center
                     )
@@ -841,7 +838,7 @@ private fun ShowcaseCard(
             }
         }
 
-        CardDivider(color = if (glass) Color(0xFF3A3530).copy(alpha = 0.08f) else Color(0xFFEDE6DA))
+        CardDivider(color = dividerColor)
 
         // 起始日
         Text(
@@ -854,7 +851,7 @@ private fun ShowcaseCard(
             textAlign = TextAlign.Center
         )
 
-        CardDivider(color = if (glass) Color(0xFF3A3530).copy(alpha = 0.08f) else Color(0xFFEDE6DA))
+        CardDivider(color = dividerColor)
 
         // 宣传栏：图标 + 应用名（会一起进入分享图）；玻璃模式下用半透明白衬托
         Row(
@@ -864,7 +861,7 @@ private fun ShowcaseCard(
                     when (cardStyle) {
                         CardStyle.PAPER -> Color(0xFFF6F1E8)
                         CardStyle.FROSTED -> Color.White.copy(alpha = 0.35f)
-                        CardStyle.LIQUID -> Color.White.copy(alpha = 0.20f)
+                        CardStyle.LIQUID -> Color.White.copy(alpha = 0.10f)
                     }
                 )
                 .padding(horizontal = 18.dp, vertical = 10.dp),
