@@ -589,6 +589,29 @@ private fun BackgroundSheet(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
+        if (usingImage) {
+            // 智能裁切诊断显形：跑的是模型还是回落算法、回落时失败原因是什么，一眼可见
+            val report = remember(current.event.imagePath) {
+                current.event.imagePath?.let { SmartCrop.reportFor(File(it)) }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = when {
+                    report == null -> "智能裁切：尚未分析"
+                    report.engine == "ncnn" -> "智能裁切：U2-NetP 模型"
+                    else -> "智能裁切：回落算法（模型未生效）"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (report?.engine == "fallback" && !report.error.isNullOrEmpty()) {
+                Text(
+                    text = report.error,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
         Spacer(Modifier.height(14.dp))
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {

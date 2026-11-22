@@ -14,6 +14,9 @@
 # Coil
 -dontwarn coil.**
 
+# JNI 桥：类名与 native 方法名必须原样保留，否则加载后找不到符号、模型会静默回落
+-keep class com.example.countdowndays.util.SaliencyNative { *; }
+
 # 保留行号，便于定位线上崩溃
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

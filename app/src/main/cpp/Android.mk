@@ -16,6 +16,7 @@ LOCAL_SRC_FILES := saliency_jni.cpp
 LOCAL_STATIC_LIBRARIES := ncnn
 # 官方 ncnn 包带 OpenMP（kmp_* 符号），编译与链接都要打开
 LOCAL_CPPFLAGS += -fopenmp
-LOCAL_LDFLAGS += -fopenmp -static-openmp
+# max-page-size=16384：16KB 页内核的新系统拒绝加载只有 4KB 对齐的 .so（会静默回落旧算法）
+LOCAL_LDFLAGS += -fopenmp -static-openmp -Wl,-z,max-page-size=16384
 LOCAL_LDLIBS := -landroid -llog -ljnigraphics
 include $(BUILD_SHARED_LIBRARY)

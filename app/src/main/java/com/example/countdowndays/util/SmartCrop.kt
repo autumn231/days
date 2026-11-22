@@ -43,6 +43,16 @@ object SmartCrop {
 
     private val resultCache = ConcurrentHashMap<String, CropResult>()
 
+    /** 单次分析的诊断（哪条引擎出的图、回落时的失败原因），供背景面板显形 */
+    class Report(val engine: String, val error: String?)
+
+    private val reports = ConcurrentHashMap<String, Report>()
+
+    @Volatile
+    private var lastSaliencyError: String? = null
+
+    fun reportFor(file: File): Report? = reports[file.absolutePath]
+
     /** 分析图最长边（分区亮度用，够细即可） */
     private const val ANALYZE_SIZE = 384
 
@@ -79,14 +89,20 @@ object SmartCrop {
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
+        var engine = "ncnn"
         val grid = saliencyGrid(context, file, bounds.outWidth, bounds.outHeight)
-            ?: handcraftedGrid(file)
+            ?: run {
+                engine = "fallback"
+                handcraftedGrid(file)
+            }
             ?: return null
         val win = bestWindow(grid, containerAspect)
         val alignment = alignmentOf(grid, win)
 
         val img = decodeAnalysis(file) ?: return null
         val zones = zoneLuminances(img, win, grid)
+        reports[file.absolutePath] =
+            Report(engine, if (engine == "fallback") lastSaliencyError else null)
         return CropResult(alignment, zones.first, zones.second)
     }
 
@@ -141,6 +157,10 @@ object SmartCrop {
             }
             Grid(gridW, gridH, values)
         } catch (t: Throwable) {
+            // 失败原因留档，背景面板里能直接看到（静默回落曾让真机问题无从查起）
+            lastSaliencyError = generateSequence(t) { it.cause }
+                .joinToString(" ← ") { it.toString() }
+                .take(220)
             null
         }
     }
