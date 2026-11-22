@@ -814,7 +814,7 @@ private fun ShowcaseCard(
                         state = hazeState,
                         style = HazeStyle(
                             backgroundColor = Color(0xFFFDFBF7),
-                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.42f)),
+                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.32f)),
                             blurRadius = 24.dp,
                             noiseFactor = 0.03f
                         )

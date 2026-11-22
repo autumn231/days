@@ -319,7 +319,7 @@ object SmartCrop {
     /**
      * 按合成链模拟卡面背景并分区算 WCAG 亮度：
      * 照片 → 乘背景压暗罩（黑 0.42→0.62 自上而下）→ 盒式模糊（近似 haze/着色器模糊）
-     * → 毛玻璃再叠奶白 tint 0.42、液态再乘深色 tint 0.70。
+     * → 毛玻璃再叠奶白 tint 0.32、液态再乘深色 tint 0.70。
      * 返回 (毛玻璃四区亮度, 液态四区亮度)，区序 [数字, 小标题, 起始日, 宣传栏]。
      */
     private fun zoneLuminances(img: AnalysisImage, win: Window, grid: Grid): Pair<FloatArray, FloatArray> {
@@ -383,7 +383,7 @@ object SmartCrop {
             val r = (sr / n).toFloat()
             val g = (sg / n).toFloat()
             val b = (sb / n).toFloat()
-            frosted[z] = wcagLuminance(r * 0.58f + cream[0] * 0.42f, g * 0.58f + cream[1] * 0.42f, b * 0.58f + cream[2] * 0.42f)
+            frosted[z] = wcagLuminance(r * 0.68f + cream[0] * 0.32f, g * 0.68f + cream[1] * 0.32f, b * 0.68f + cream[2] * 0.32f)
             liquid[z] = wcagLuminance(r * 0.70f, g * 0.70f, b * 0.70f)
         }
         return frosted to liquid
