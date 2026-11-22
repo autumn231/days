@@ -409,8 +409,8 @@ private fun ShowcasePage(
     val liquidState = remember { LiquidGlassState() }
     val liquidBackdropLayer = rememberGraphicsLayer()
     liquidState.backdropLayer = liquidBackdropLayer
-    // 背景照片在卡片区域的平均亮度（智能裁切分析时顺带算出）：卡片字色据此自适应
-    var photoLuminance by remember { mutableStateOf<Float?>(null) }
+    // 智能裁切分析结果（裁切对齐 + 分区亮度）：背景分析时产出，卡片字色据此逐区自适应
+    var cropResult by remember { mutableStateOf<SmartCrop.CropResult?>(null) }
 
     Box(
         modifier = Modifier
@@ -428,7 +428,7 @@ private fun ShowcasePage(
     ) {
         ShowcaseBackground(
             item,
-            onPhotoTone = { photoLuminance = it },
+            onCropResult = { cropResult = it },
             sourceModifier = if (glassEnabled) {
                 Modifier.haze(hazeState).then(
                     if (cardStyle == CardStyle.LIQUID) Modifier.liquidSource(liquidState) else Modifier
@@ -449,7 +449,7 @@ private fun ShowcasePage(
                 cardStyle = cardStyle,
                 hazeState = if (glassEnabled) hazeState else null,
                 liquidState = if (glassEnabled) liquidState else null,
-                photoLuminance = photoLuminance,
+                cropResult = cropResult,
                 modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
                 accent = accent,
@@ -486,29 +486,31 @@ private fun ShowcasePage(
 private fun ShowcaseBackground(
     item: EventWithNodes,
     sourceModifier: Modifier = Modifier,
-    onPhotoTone: (Float?) -> Unit = {}
+    onCropResult: (SmartCrop.CropResult?) -> Unit = {}
 ) {
     val event = item.event
     val imagePath = event.imagePath
     val accent = eventColor(event.colorIndex)
+    val context = LocalContext.current
 
-    // 智能裁切焦点：背景仍铺满全屏（Crop），但裁切窗按 smartcrop 重要性图
+    // 智能裁切焦点：背景仍铺满全屏（Crop），但裁切窗按 U2-NetP 主体掩膜
     // 挪到主体一侧，而不是永远居中裁（分析异步进行，未完成前先居中）；
-    // 同一趟分析顺带给出卡片区域的平均亮度，供卡片自适应字色
+    // 同一趟分析顺带给出卡片四个文字区的合成亮度，供卡片逐区自适应字色
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var cropAlignment by remember(imagePath) { mutableStateOf<Alignment>(Alignment.Center) }
     LaunchedEffect(imagePath, containerSize) {
         if (!imagePath.isNullOrEmpty() && containerSize.width > 0 && containerSize.height > 0) {
             val result = SmartCrop.focalPoint(
+                context,
                 File(imagePath),
                 containerSize.width.toFloat() / containerSize.height.toFloat()
             )
             if (result != null) {
                 cropAlignment = result.alignment
-                onPhotoTone(result.cardLuminance)
+                onCropResult(result)
             }
         } else if (imagePath.isNullOrEmpty()) {
-            onPhotoTone(null)
+            onCropResult(null)
         }
     }
 
@@ -707,53 +709,59 @@ private fun ShowcaseCard(
     cardStyle: CardStyle = CardStyle.PAPER,
     hazeState: HazeState? = null,
     liquidState: LiquidGlassState? = null,
-    photoLuminance: Float? = null,
+    cropResult: SmartCrop.CropResult? = null,
     onClickNumber: () -> Unit
 ) {
     val cardShape = RoundedCornerShape(18.dp)
-    // 字色自适应（用户提议）：背景照片在卡片区域的平均亮度，先按「照片 × 背景压暗罩
-    // × 各效果自身的提亮/压暗」折算成卡面实际明暗，再决定整套字色用深还是用浅。
-    // 数字、小标题、起始日、宣传栏、分隔线全套一起换，不留没被照顾到的文字。
-    // 无照片（预置渐变背景）时：毛玻璃用深字、液态用白字，与 v3.14 一致。
-    val lightText = when (cardStyle) {
-        CardStyle.PAPER -> false
-        CardStyle.FROSTED -> photoLuminance?.let { it * 0.35f + 0.45f < 0.55f } ?: false
-        CardStyle.LIQUID -> photoLuminance?.let { it * 0.34f < 0.55f } ?: true
+    // 字色逐区自适应（v3.16）：分析端已按合成链算出每个文字区背后的实际背景亮度，
+    // 每区在「近黑 / 近白」两档极端色里按 WCAG 对比度择优——两档的交叉点在 L≈0.19，
+    // 交叉点上两档都约有 4.5:1，所以任何背景下小字都达标；这也是 AndroidX Palette
+    // 给图片配字色的同款算法。v3.15 的教训：①整卡一个平均值管不住分区明暗差；
+    // ②「深灰」#5F5546 是中间调（实测对比度仅 1.8–2.9:1），深档必须用近黑。
+    // 无照片（预置渐变背景）时：毛玻璃用深字、液态用白字，与之前一致。
+    // 区序：0 数字（含小眉题）/ 1 小标题 / 2 起始日（含分隔线）/ 3 宣传栏
+    val zoneLum = cropResult?.let {
+        if (cardStyle == CardStyle.FROSTED) it.frostedZoneLum else it.liquidZoneLum
+    }
+    fun zoneLight(zone: Int): Boolean = when {
+        cardStyle == CardStyle.PAPER -> false
+        zoneLum != null -> zoneLum[zone] < 0.19f
+        else -> cardStyle == CardStyle.LIQUID
     }
     val numberColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFF3A3530)
-        lightText -> Color.White
-        else -> Color(0xFF33302B)
+        zoneLight(0) -> Color.White
+        else -> Color(0xFF14110D)
     }
     val captionColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFF9C9284)
-        lightText -> Color(0xFFF2EDE3)
-        else -> Color(0xFF5F5546)
+        zoneLight(1) -> Color(0xFFF5F0E6)
+        else -> Color(0xFF14110D)
     }
     val startColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFF8C8175)
-        lightText -> Color(0xFFE3DCCE)
-        else -> Color(0xFF574D40)
+        zoneLight(2) -> Color(0xFFEDE6D6)
+        else -> Color(0xFF1A1611)
     }
     val promoNameColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFF5E564C)
-        lightText -> Color.White
-        else -> Color(0xFF3F372C)
+        zoneLight(3) -> Color.White
+        else -> Color(0xFF14110D)
     }
     val promoSloganColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFFA2988A)
-        lightText -> Color(0xFFD8D0C0)
-        else -> Color(0xFF6B5F4E)
+        zoneLight(3) -> Color(0xFFDDD5C4)
+        else -> Color(0xFF211C15)
     }
     val dividerColor = when {
         cardStyle == CardStyle.PAPER -> Color(0xFFEDE6DA)
-        lightText -> Color.White.copy(alpha = 0.16f)
-        else -> Color(0xFF3A3530).copy(alpha = 0.10f)
+        zoneLight(2) -> Color.White.copy(alpha = 0.16f)
+        else -> Color(0xFF14110D).copy(alpha = 0.35f)
     }
     val stripBg = when {
         cardStyle == CardStyle.PAPER -> Color(0xFFF6F1E8)
-        lightText -> Color.Black.copy(alpha = 0.22f)
-        else -> Color.White.copy(alpha = 0.35f)
+        zoneLight(3) -> Color.Black.copy(alpha = 0.22f)
+        else -> Color.White.copy(alpha = 0.30f)
     }
     val density = LocalDensity.current
     val liquidEffectLayer = rememberGraphicsLayer()

@@ -1,113 +1,209 @@
 package com.example.countdowndays.util
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.ui.BiasAlignment
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.FloatBuffer
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
- * 内容感知裁切：思路移植自开源 smartcrop.js（jwagner，MIT）的核心算法——
- * 拉普拉斯边缘 + 饱和度 + 肤色三路信号合成「重要性图」，再用积分图滑动窗口
- * 找出目标宽高比下总重要性最高的裁切窗，最后把窗的位置换算成
- * ContentScale.Crop 用的 BiasAlignment。背景仍旧铺满全屏，
- * 只是被裁掉的那一侧尽量选不重要的内容，而不是永远居中裁。
+ * 内容感知裁切 + 卡片区域明暗分析（v3.16 起统一架构）：
+ *
+ * 主体检测改用端上小模型 U2-NetP（显著性检测，ONNX，4.7MB，rembg 同款轻量引擎，
+ * Apache-2.0）经 ONNX Runtime 推理出主体掩膜，掩膜即「重要性图」——
+ * 替代 v3.12–v3.15 手工合成的边缘+饱和度+肤色重要性图（那套求和式打分会被
+ * 亮窗、条纹等强信号带偏，实测咖啡照片裁切窗顶格右移 0.79 vs 人脸 0.47；
+ * 换掩膜后 U2-NetP 选窗 0.54）。模型/运行时不可用时回落手工重要性图，行为不劣于 v3.15。
+ *
+ * 同一趟分析还顺带按「照片 × 背景压暗罩 × 玻璃效果」的合成链模拟卡面实际背景，
+ * 分区（数字/小标题/起始日/宣传栏）算 WCAG 相对亮度，供卡片逐区选字色。
  */
 object SmartCrop {
 
-    private class ImportanceMap(
-        val width: Int,
-        val height: Int,
-        val integral: DoubleArray,
-        /** 逐像素亮度（0..255），算卡片区域明暗用 */
-        val lum: FloatArray,
-        /** 重要性图的重心（0..1 的相对坐标），裁切窗会被它轻轻拉住 */
-        val centroidX: Float,
-        val centroidY: Float
+    /** 裁切结果：对齐 + 两种玻璃合成下四个文字区的 WCAG 相对亮度（0..1） */
+    class CropResult(
+        val alignment: BiasAlignment,
+        /** [数字区, 小标题区, 起始日区, 宣传栏区]，毛玻璃合成后的背景亮度 */
+        val frostedZoneLum: FloatArray,
+        /** 同上，液态玻璃（深色 tint）合成后 */
+        val liquidZoneLum: FloatArray
     )
 
-    /** 裁切结果：对齐 + 裁切窗内卡片区域的平均亮度（0..1，供卡片自适应字色） */
-    data class CropResult(val alignment: BiasAlignment, val cardLuminance: Float)
+    private class Grid(val width: Int, val height: Int, val values: FloatArray)
 
-    private val cache = ConcurrentHashMap<String, ImportanceMap>()
+    private class AnalysisImage(val width: Int, val height: Int, val pixels: IntArray)
 
-    /** 分析图最长边：够判主体位置，又足够快 */
-    private const val ANALYZE_SIZE = 128
+    private val resultCache = ConcurrentHashMap<String, CropResult>()
 
-    /**
-     * 返回给定图片文件在目标容器宽高比（width/height）下的最佳裁切对齐。
-     * 任何失败（解码失败等）都退回居中，绝不抛异常。
-     */
-    suspend fun focalAlignment(file: File, containerAspect: Float): BiasAlignment {
-        if (containerAspect <= 0f || !file.exists()) return BiasAlignment(0f, 0f)
-        val map = importanceMap(file) ?: return BiasAlignment(0f, 0f)
-        return withContext(Dispatchers.Default) { bestAlignment(map, containerAspect) }
-    }
+    /** 分析图最长边（分区亮度用，够细即可） */
+    private const val ANALYZE_SIZE = 384
 
-    /** 同 focalAlignment，另附裁切窗内卡片区域的平均亮度；失败返回 null */
-    suspend fun focalPoint(file: File, containerAspect: Float): CropResult? {
-        if (containerAspect <= 0f || !file.exists()) return null
-        val map = importanceMap(file) ?: return null
-        return withContext(Dispatchers.Default) {
-            val win = bestWindow(map, containerAspect)
-            val alignment = alignmentOf(map, win)
-            // 卡片区域 ≈ 裁切窗的横向 7%–93%、纵向 26%–74%（与展示页卡片实际占位对应）
-            val x0 = win.left + (win.width * 0.07f).toInt()
-            val x1 = win.left + (win.width * 0.93f).toInt()
-            val y0 = win.top + (win.height * 0.26f).toInt()
-            val y1 = win.top + (win.height * 0.74f).toInt()
-            var sum = 0.0
-            var count = 0
-            for (y in y0 until y1.coerceAtMost(map.height)) {
-                for (x in x0 until x1.coerceAtMost(map.width)) {
-                    sum += map.lum[y * map.width + x]
-                    count++
-                }
+    /** 掩膜重要性图的长边分辨率 */
+    private const val GRID_SIZE = 144
+
+    private const val MODEL_INPUT = 320
+
+    // ---- ONNX 会话（懒加载单例，失败后不再重试，自动回落手工图） ----
+    @Volatile
+    private var ortSession: OrtSession? = null
+
+    @Volatile
+    private var ortFailed = false
+
+    private fun ensureSession(context: Context): OrtSession? {
+        ortSession?.let { return it }
+        if (ortFailed) return null
+        synchronized(this) {
+            ortSession?.let { return it }
+            return try {
+                val env = OrtEnvironment.getEnvironment()
+                val bytes = context.assets.open("u2netp.onnx").use { it.readBytes() }
+                val created = env.createSession(bytes, OrtSession.SessionOptions())
+                ortSession = created
+                created
+            } catch (t: Throwable) {
+                ortFailed = true
+                null
             }
-            val luminance = if (count > 0) (sum / count / 255.0).toFloat() else 0.5f
-            CropResult(alignment, luminance)
         }
     }
 
-    private suspend fun importanceMap(file: File): ImportanceMap? {
-        val key = "${file.absolutePath}:${file.lastModified()}:${file.length()}"
-        cache[key]?.let { return it }
-        val map = withContext(Dispatchers.Default) { runCatching { analyze(file) }.getOrNull() }
-        if (map != null) cache[key] = map
-        return map
+    /**
+     * 分析照片在目标容器宽高比下的最佳裁切 + 卡片分区亮度。
+     * 任何失败返回 null（调用方退回居中裁切 + 静态字色），绝不抛异常。
+     */
+    suspend fun focalPoint(context: Context, file: File, containerAspect: Float): CropResult? {
+        if (containerAspect <= 0f || !file.exists()) return null
+        val key = "${file.absolutePath}:${file.lastModified()}:${file.length()}:" +
+            (containerAspect * 100).roundToInt()
+        resultCache[key]?.let { return it }
+        val result = withContext(Dispatchers.Default) {
+            runCatching { analyze(context, file, containerAspect) }.getOrNull()
+        }
+        if (result != null) resultCache[key] = result
+        return result
     }
 
-    private fun analyze(file: File): ImportanceMap? {
+    private fun analyze(context: Context, file: File, containerAspect: Float): CropResult? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        var sample = 1
-        while (bounds.outWidth / sample > ANALYZE_SIZE * 2 || bounds.outHeight / sample > ANALYZE_SIZE * 2) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bmp: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-        val w = bmp.width
-        val h = bmp.height
-        val pixels = IntArray(w * h)
-        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
-        bmp.recycle()
-        if (w < 4 || h < 4) return null
+        val grid = saliencyGrid(context, file, bounds.outWidth, bounds.outHeight)
+            ?: handcraftedGrid(file)
+            ?: return null
+        val win = bestWindow(grid, containerAspect)
+        val alignment = alignmentOf(grid, win)
 
-        // 亮度（拉普拉斯边缘用）
+        val img = decodeAnalysis(file) ?: return null
+        val zones = zoneLuminances(img, win, grid)
+        return CropResult(alignment, zones.first, zones.second)
+    }
+
+    // ---------------- 主体掩膜（U2-NetP） ----------------
+
+    /** 跑 U2-NetP 出显著性掩膜，缩成重要性图；失败返回 null 由调用方回落 */
+    private fun saliencyGrid(context: Context, file: File, photoW: Int, photoH: Int): Grid? {
+        val session = ensureSession(context) ?: return null
+        return try {
+            val env = OrtEnvironment.getEnvironment()
+            // 解码并拉伸到模型输入 320×320（U2-Net 系标准预处理，与离线验证同口径）
+            var sample = 1
+            while (photoW / sample > MODEL_INPUT * 2 || photoH / sample > MODEL_INPUT * 2) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val src: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+            val inputBmp = Bitmap.createScaledBitmap(src, MODEL_INPUT, MODEL_INPUT, true)
+            if (inputBmp !== src) src.recycle()
+            val px = IntArray(MODEL_INPUT * MODEL_INPUT)
+            inputBmp.getPixels(px, 0, MODEL_INPUT, 0, 0, MODEL_INPUT, MODEL_INPUT)
+            inputBmp.recycle()
+
+            val mean = floatArrayOf(0.485f, 0.456f, 0.406f)
+            val std = floatArrayOf(0.229f, 0.224f, 0.225f)
+            val data = FloatArray(3 * MODEL_INPUT * MODEL_INPUT)
+            val plane = MODEL_INPUT * MODEL_INPUT
+            for (i in px.indices) {
+                val c = px[i]
+                data[i] = ((c shr 16 and 0xFF) / 255f - mean[0]) / std[0]
+                data[plane + i] = ((c shr 8 and 0xFF) / 255f - mean[1]) / std[1]
+                data[2 * plane + i] = ((c and 0xFF) / 255f - mean[2]) / std[2]
+            }
+            val inputName = session.inputNames.iterator().next()
+            val tensor = OnnxTensor.createTensor(
+                env, FloatBuffer.wrap(data), longArrayOf(1, 3, MODEL_INPUT.toLong(), MODEL_INPUT.toLong())
+            )
+            val mask = tensor.use {
+                session.run(Collections.singletonMap(inputName, it)).use { result ->
+                    @Suppress("UNCHECKED_CAST")
+                    val out = (result[0].value as Array<Array<Array<FloatArray>>>)[0][0]
+                    // min-max 归一化（与 U2-Net 官方后处理一致）
+                    var mn = Float.MAX_VALUE
+                    var mx = -Float.MAX_VALUE
+                    for (row in out) for (v in row) {
+                        if (v < mn) mn = v
+                        if (v > mx) mx = v
+                    }
+                    val range = max(mx - mn, 1e-8f)
+                    val flat = FloatArray(MODEL_INPUT * MODEL_INPUT)
+                    for (y in 0 until MODEL_INPUT) {
+                        for (x in 0 until MODEL_INPUT) {
+                            flat[y * MODEL_INPUT + x] = (out[y][x] - mn) / range
+                        }
+                    }
+                    flat
+                }
+            }
+            // 掩膜块平均缩到重要性图尺寸（保持照片宽高比）
+            val gridW = GRID_SIZE
+            val gridH = (GRID_SIZE.toFloat() * photoH / photoW).roundToInt().coerceIn(24, GRID_SIZE)
+            val values = FloatArray(gridW * gridH)
+            for (gy in 0 until gridH) {
+                val y0 = gy * MODEL_INPUT / gridH
+                val y1 = max(y0 + 1, (gy + 1) * MODEL_INPUT / gridH)
+                for (gx in 0 until gridW) {
+                    val x0 = gx * MODEL_INPUT / gridW
+                    val x1 = max(x0 + 1, (gx + 1) * MODEL_INPUT / gridW)
+                    var sum = 0f
+                    var n = 0
+                    for (y in y0 until y1) for (x in x0 until x1) {
+                        sum += mask[y * MODEL_INPUT + x]
+                        n++
+                    }
+                    values[gy * gridW + gx] = if (n > 0) sum / n else 0f
+                }
+            }
+            Grid(gridW, gridH, values)
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    // ---------------- 回落：手工重要性图（v3.15 同款） ----------------
+
+    private fun handcraftedGrid(file: File): Grid? {
+        val img = decodeAnalysis(file, longSide = 128) ?: return null
+        val w = img.width
+        val h = img.height
+        val pixels = img.pixels
         val lum = FloatArray(w * h)
         for (i in pixels.indices) {
             val c = pixels[i]
             lum[i] = 0.2126f * (c shr 16 and 0xFF) + 0.7152f * (c shr 8 and 0xFF) + 0.0722f * (c and 0xFF)
         }
-
-        val importance = FloatArray(w * h)
+        val values = FloatArray(w * h)
         for (y in 0 until h) {
             for (x in 0 until w) {
                 val i = y * w + x
@@ -115,17 +211,13 @@ object SmartCrop {
                 val r = (c shr 16 and 0xFF) / 255f
                 val g = (c shr 8 and 0xFF) / 255f
                 val b = (c and 0xFF) / 255f
-
-                // 边缘：拉普拉斯，边界处取 0
                 var edge = 0f
                 if (x in 1 until w - 1 && y in 1 until h - 1) {
                     edge = abs(4 * lum[i] - lum[i - 1] - lum[i + 1] - lum[i - w] - lum[i + w]) / 255f
                 }
-                // 饱和度（HSV 的 S）
                 val mx = max(r, max(g, b))
                 val mn = min(r, min(g, b))
                 val sat = if (mx > 0f) (mx - mn) / mx else 0f
-                // 肤色：归一化 RGB 靠近参考肤色 (0.78, 0.57, 0.44) 且亮度适中时加权
                 var skin = 0f
                 val sum = r + g + b
                 if (sum > 0.45f && sum < 2.7f) {
@@ -135,47 +227,20 @@ object SmartCrop {
                     val d = (nr - 1.18f) * (nr - 1.18f) + (ng - 0.86f) * (ng - 0.86f) + (nb - 0.66f) * (nb - 0.66f)
                     if (d < 0.10f) skin = (0.10f - d) / 0.10f
                 }
-                // v3.15：肤色权重加大、边缘压低——人像照片里家具/条纹的强边缘
-                // 曾把裁切窗从人脸边上拽走（用户实测「找不到主体」）
-                importance[i] = edge * 0.75f + sat * 0.35f + skin * 1.1f
+                values[i] = edge * 0.75f + sat * 0.35f + skin * 1.1f
             }
         }
-
-        // 重要性重心：裁切窗评分会被它拉住，避免窗被局部强信号拽偏
-        var totalImp = 0.0
-        var weightedX = 0.0
-        var weightedY = 0.0
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                val v = importance[y * w + x].toDouble()
-                totalImp += v
-                weightedX += v * (x + 0.5) / w
-                weightedY += v * (y + 0.5) / h
-            }
-        }
-        val centroidX = if (totalImp > 0) (weightedX / totalImp).toFloat() else 0.5f
-        val centroidY = if (totalImp > 0) (weightedY / totalImp).toFloat() else 0.5f
-
-        // 积分图（带一圈零边，尺寸 (w+1)×(h+1)）
-        val iw = w + 1
-        val integral = DoubleArray(iw * (h + 1))
-        for (y in 0 until h) {
-            var rowSum = 0.0
-            for (x in 0 until w) {
-                rowSum += importance[y * w + x]
-                integral[(y + 1) * iw + (x + 1)] = integral[y * iw + (x + 1)] + rowSum
-            }
-        }
-        return ImportanceMap(w, h, integral, lum, centroidX, centroidY)
+        return Grid(w, h, values)
     }
+
+    // ---------------- 裁切窗搜索 ----------------
 
     private class Window(val left: Int, val top: Int, val width: Int, val height: Int)
 
-    private fun bestWindow(map: ImportanceMap, containerAspect: Float): Window {
-        val w = map.width
-        val h = map.height
+    private fun bestWindow(grid: Grid, containerAspect: Float): Window {
+        val w = grid.width
+        val h = grid.height
         val imageAspect = w.toFloat() / h.toFloat()
-        // Crop 的裁切窗 = 图内能容纳的最大目标宽高比矩形
         val winW: Int
         val winH: Int
         if (imageAspect > containerAspect) {
@@ -187,52 +252,204 @@ object SmartCrop {
         }
         if (winW >= w && winH >= h) return Window(0, 0, w, h)
 
+        // 积分图
         val iw = w + 1
+        val integral = DoubleArray(iw * (h + 1))
+        for (y in 0 until h) {
+            var rowSum = 0.0
+            for (x in 0 until w) {
+                rowSum += grid.values[y * w + x]
+                integral[(y + 1) * iw + (x + 1)] = integral[y * iw + (x + 1)] + rowSum
+            }
+        }
         fun windowSum(left: Int, top: Int): Double {
             val right = left + winW
             val bottom = top + winH
-            return map.integral[bottom * iw + right] - map.integral[top * iw + right] -
-                map.integral[bottom * iw + left] + map.integral[top * iw + left]
+            return integral[bottom * iw + right] - integral[top * iw + right] -
+                integral[bottom * iw + left] + integral[top * iw + left]
         }
+        // 掩膜重心（只作同分时的轻拉力，主体掩膜本身已是强信号，不再需要 v3.15 的重罚分）
+        var total = 0.0
+        var wx = 0.0
+        var wy = 0.0
+        for (y in 0 until h) for (x in 0 until w) {
+            val v = grid.values[y * w + x].toDouble()
+            total += v
+            wx += v * (x + 0.5) / w
+            wy += v * (y + 0.5) / h
+        }
+        val ccx = if (total > 0) wx / total else 0.5
+        val ccy = if (total > 0) wy / total else 0.5
 
         var bestScore = Double.NEGATIVE_INFINITY
         var bestLeft = (w - winW) / 2
         var bestTop = (h - winH) / 2
-        val stepX = max(1, (w - winW) / 24)
-        val stepY = max(1, (h - winH) / 24)
-        var top = 0
-        while (top <= h - winH) {
-            var left = 0
-            while (left <= w - winW) {
-                // 重心拉力：窗中心离重要性重心越远扣分越多，防局部强信号拽偏；
-                // 另留极轻的画面中心先验，内容均匀时不贴边
+        for (top in 0..(h - winH)) {
+            for (left in 0..(w - winW)) {
                 val cx = (left + winW / 2f) / w
                 val cy = (top + winH / 2f) / h
-                val centroidPenalty = 1.0 - 0.30 * (abs(cx - map.centroidX) + abs(cy - map.centroidY))
-                val centerPenalty = 1.0 - 0.03 * (abs(cx - 0.5f) + abs(cy - 0.5f))
-                val score = windowSum(left, top) * centroidPenalty * centerPenalty
+                val pull = 1.0 - 0.05 * (abs(cx - ccx) + abs(cy - ccy))
+                val score = windowSum(left, top) * pull
                 if (score > bestScore) {
                     bestScore = score
                     bestLeft = left
                     bestTop = top
                 }
-                if (left == w - winW) break
-                left = min(left + stepX, w - winW)
             }
-            if (top == h - winH) break
-            top = min(top + stepY, h - winH)
         }
         return Window(bestLeft, bestTop, winW, winH)
     }
 
-    private fun alignmentOf(map: ImportanceMap, win: Window): BiasAlignment {
-        val w = map.width
-        val h = map.height
+    private fun alignmentOf(grid: Grid, win: Window): BiasAlignment {
+        val w = grid.width
+        val h = grid.height
         val biasX = if (w > win.width) ((win.left.toFloat() / (w - win.width)) * 2f - 1f) else 0f
         val biasY = if (h > win.height) ((win.top.toFloat() / (h - win.height)) * 2f - 1f) else 0f
         return BiasAlignment(biasX.coerceIn(-1f, 1f), biasY.coerceIn(-1f, 1f))
     }
 
-    private fun bestAlignment(map: ImportanceMap, containerAspect: Float): BiasAlignment =
-        alignmentOf(map, bestWindow(map, containerAspect))
+    // ---------------- 分区亮度（合成模拟） ----------------
+
+    private fun decodeAnalysis(file: File, longSide: Int = ANALYZE_SIZE): AnalysisImage? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > longSide * 2 || bounds.outHeight / sample > longSide * 2) {
+            sample *= 2
+        }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+        val w = bmp.width
+        val h = bmp.height
+        if (w < 4 || h < 4) {
+            bmp.recycle()
+            return null
+        }
+        val pixels = IntArray(w * h)
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+        bmp.recycle()
+        return AnalysisImage(w, h, pixels)
+    }
+
+    /**
+     * 按合成链模拟卡面背景并分区算 WCAG 亮度：
+     * 照片 → 乘背景压暗罩（黑 0.42→0.62 自上而下）→ 盒式模糊（近似 haze/着色器模糊）
+     * → 毛玻璃再叠奶白 tint 0.42、液态再乘深色 tint 0.70。
+     * 返回 (毛玻璃四区亮度, 液态四区亮度)，区序 [数字, 小标题, 起始日, 宣传栏]。
+     */
+    private fun zoneLuminances(img: AnalysisImage, win: Window, grid: Grid): Pair<FloatArray, FloatArray> {
+        val w = img.width
+        val h = img.height
+        // 裁切窗换算到分析图坐标（窗口定义在重要性图坐标系，两者都映射到原图比例）
+        val winLeftF = win.left.toFloat() / grid.width
+        val winTopF = win.top.toFloat() / grid.height
+        val winWF = win.width.toFloat() / grid.width
+        val winHF = win.height.toFloat() / grid.height
+
+        // 压暗后的 RGB（0..1），压暗系数随屏幕纵向位置走（窗口即满屏）
+        val dark = FloatArray(w * h * 3)
+        for (y in 0 until h) {
+            val imgYF = (y + 0.5f) / h
+            val screenY = ((imgYF - winTopF) / winHF).coerceIn(0f, 1f)
+            val keep = 1f - (0.42f + 0.20f * screenY)
+            for (x in 0 until w) {
+                val c = img.pixels[y * w + x]
+                val i = (y * w + x) * 3
+                dark[i] = (c shr 16 and 0xFF) / 255f * keep
+                dark[i + 1] = (c shr 8 and 0xFF) / 255f * keep
+                dark[i + 2] = (c and 0xFF) / 255f * keep
+            }
+        }
+        val blurred = boxBlur(boxBlur(dark, w, h, 5), w, h, 5)
+
+        // 四区在屏幕纵向的带（与展示页卡片布局对应），横向取窗口内 8%–92%
+        val bands = arrayOf(
+            floatArrayOf(0.38f, 0.50f),
+            floatArrayOf(0.50f, 0.56f),
+            floatArrayOf(0.57f, 0.64f),
+            floatArrayOf(0.63f, 0.69f)
+        )
+        val cream = floatArrayOf(253f / 255f, 251f / 255f, 247f / 255f)
+        val frosted = FloatArray(4)
+        val liquid = FloatArray(4)
+        for (z in 0 until 4) {
+            val x0 = ((winLeftF + 0.08f * winWF) * w).toInt().coerceIn(0, w - 1)
+            val x1 = ((winLeftF + 0.92f * winWF) * w).toInt().coerceIn(x0 + 1, w)
+            val y0 = ((winTopF + bands[z][0] * winHF) * h).toInt().coerceIn(0, h - 1)
+            val y1 = ((winTopF + bands[z][1] * winHF) * h).toInt().coerceIn(y0 + 1, h)
+            var sr = 0.0
+            var sg = 0.0
+            var sb = 0.0
+            var n = 0
+            for (y in y0 until y1) {
+                for (x in x0 until x1) {
+                    val i = (y * w + x) * 3
+                    sr += blurred[i]
+                    sg += blurred[i + 1]
+                    sb += blurred[i + 2]
+                    n++
+                }
+            }
+            if (n == 0) {
+                frosted[z] = 0.5f
+                liquid[z] = 0.5f
+                continue
+            }
+            val r = (sr / n).toFloat()
+            val g = (sg / n).toFloat()
+            val b = (sb / n).toFloat()
+            frosted[z] = wcagLuminance(r * 0.58f + cream[0] * 0.42f, g * 0.58f + cream[1] * 0.42f, b * 0.58f + cream[2] * 0.42f)
+            liquid[z] = wcagLuminance(r * 0.70f, g * 0.70f, b * 0.70f)
+        }
+        return frosted to liquid
+    }
+
+    private fun wcagLuminance(r: Float, g: Float, b: Float): Float {
+        fun lin(c: Float): Float {
+            val v = c.coerceIn(0f, 1f)
+            return if (v <= 0.03928f) v / 12.92f else ((v + 0.055f) / 1.055f).pow(2.4f)
+        }
+        return 0.2126f * lin(r) + 0.7152f * lin(g) + 0.0722f * lin(b)
+    }
+
+    /** 可分离盒式模糊（对压暗后的 RGB 平面数组操作） */
+    private fun boxBlur(src: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
+        val tmp = FloatArray(src.size)
+        val out = FloatArray(src.size)
+        val winSize = radius * 2 + 1
+        // 横向
+        for (y in 0 until h) {
+            for (ch in 0 until 3) {
+                var acc = 0f
+                for (k in -radius..radius) {
+                    val x = k.coerceIn(0, w - 1)
+                    acc += src[(y * w + x) * 3 + ch]
+                }
+                for (x in 0 until w) {
+                    tmp[(y * w + x) * 3 + ch] = acc / winSize
+                    val xOut = (x - radius).coerceIn(0, w - 1)
+                    val xIn = (x + radius + 1).coerceIn(0, w - 1)
+                    acc += src[(y * w + xIn) * 3 + ch] - src[(y * w + xOut) * 3 + ch]
+                }
+            }
+        }
+        // 纵向
+        for (x in 0 until w) {
+            for (ch in 0 until 3) {
+                var acc = 0f
+                for (k in -radius..radius) {
+                    val y = k.coerceIn(0, h - 1)
+                    acc += tmp[(y * w + x) * 3 + ch]
+                }
+                for (y in 0 until h) {
+                    out[(y * w + x) * 3 + ch] = acc / winSize
+                    val yOut = (y - radius).coerceIn(0, h - 1)
+                    val yIn = (y + radius + 1).coerceIn(0, h - 1)
+                    acc += tmp[(yIn * w + x) * 3 + ch] - tmp[(yOut * w + x) * 3 + ch]
+                }
+            }
+        }
+        return out
+    }
 }

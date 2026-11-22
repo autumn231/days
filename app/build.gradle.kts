@@ -27,8 +27,8 @@ android {
         applicationId = "com.example.countdowndays"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "3.15"
+        versionCode = 25
+        versionName = "3.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -132,6 +132,8 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.haze)
+    // 端上推理（U2-NetP 主体检测，模型在 assets/u2netp.onnx）；已限定 arm64-v8a 打包
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.androidx.glance.appwidget)
 
