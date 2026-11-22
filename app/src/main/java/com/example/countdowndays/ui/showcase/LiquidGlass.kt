@@ -13,8 +13,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -117,9 +120,7 @@ private fun DrawScope.drawLiquidGlass(
     // 把背景层按窗口坐标对齐录进效果层：效果层里第 p 个像素，
     // 正是屏幕上卡片第 p 个像素背后的背景
     effectLayer.record {
-        withTransform({
-            translate(srcPos.x - selfPos.x, srcPos.y - selfPos.y)
-        }) {
+        translate(srcPos.x - selfPos.x, srcPos.y - selfPos.y) {
             drawLayer(backdrop)
         }
     }
@@ -130,7 +131,7 @@ private fun DrawScope.drawLiquidGlass(
         blurRadiusPx = blurRadiusPx,
         refractionHeightPx = refractionHeightPx,
         refractionAmountPx = refractionAmountPx
-    )
+    ).asComposeRenderEffect()
 
     val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawLiquidGlass)) }
     clipPath(path) {
