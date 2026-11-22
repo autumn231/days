@@ -20,7 +20,19 @@ import kotlin.math.min
  */
 object SmartCrop {
 
-    private class ImportanceMap(val width: Int, val height: Int, val integral: DoubleArray)
+    private class ImportanceMap(
+        val width: Int,
+        val height: Int,
+        val integral: DoubleArray,
+        /** 逐像素亮度（0..255），算卡片区域明暗用 */
+        val lum: FloatArray,
+        /** 重要性图的重心（0..1 的相对坐标），裁切窗会被它轻轻拉住 */
+        val centroidX: Float,
+        val centroidY: Float
+    )
+
+    /** 裁切结果：对齐 + 裁切窗内卡片区域的平均亮度（0..1，供卡片自适应字色） */
+    data class CropResult(val alignment: BiasAlignment, val cardLuminance: Float)
 
     private val cache = ConcurrentHashMap<String, ImportanceMap>()
 
@@ -35,6 +47,31 @@ object SmartCrop {
         if (containerAspect <= 0f || !file.exists()) return BiasAlignment(0f, 0f)
         val map = importanceMap(file) ?: return BiasAlignment(0f, 0f)
         return withContext(Dispatchers.Default) { bestAlignment(map, containerAspect) }
+    }
+
+    /** 同 focalAlignment，另附裁切窗内卡片区域的平均亮度；失败返回 null */
+    suspend fun focalPoint(file: File, containerAspect: Float): CropResult? {
+        if (containerAspect <= 0f || !file.exists()) return null
+        val map = importanceMap(file) ?: return null
+        return withContext(Dispatchers.Default) {
+            val win = bestWindow(map, containerAspect)
+            val alignment = alignmentOf(map, win)
+            // 卡片区域 ≈ 裁切窗的横向 7%–93%、纵向 26%–74%（与展示页卡片实际占位对应）
+            val x0 = win.left + (win.width * 0.07f).toInt()
+            val x1 = win.left + (win.width * 0.93f).toInt()
+            val y0 = win.top + (win.height * 0.26f).toInt()
+            val y1 = win.top + (win.height * 0.74f).toInt()
+            var sum = 0.0
+            var count = 0
+            for (y in y0 until y1.coerceAtMost(map.height)) {
+                for (x in x0 until x1.coerceAtMost(map.width)) {
+                    sum += map.lum[y * map.width + x]
+                    count++
+                }
+            }
+            val luminance = if (count > 0) (sum / count / 255.0).toFloat() else 0.5f
+            CropResult(alignment, luminance)
+        }
     }
 
     private suspend fun importanceMap(file: File): ImportanceMap? {
@@ -98,9 +135,26 @@ object SmartCrop {
                     val d = (nr - 1.18f) * (nr - 1.18f) + (ng - 0.86f) * (ng - 0.86f) + (nb - 0.66f) * (nb - 0.66f)
                     if (d < 0.10f) skin = (0.10f - d) / 0.10f
                 }
-                importance[i] = edge * 0.9f + sat * 0.35f + skin * 0.8f
+                // v3.15：肤色权重加大、边缘压低——人像照片里家具/条纹的强边缘
+                // 曾把裁切窗从人脸边上拽走（用户实测「找不到主体」）
+                importance[i] = edge * 0.75f + sat * 0.35f + skin * 1.1f
             }
         }
+
+        // 重要性重心：裁切窗评分会被它拉住，避免窗被局部强信号拽偏
+        var totalImp = 0.0
+        var weightedX = 0.0
+        var weightedY = 0.0
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val v = importance[y * w + x].toDouble()
+                totalImp += v
+                weightedX += v * (x + 0.5) / w
+                weightedY += v * (y + 0.5) / h
+            }
+        }
+        val centroidX = if (totalImp > 0) (weightedX / totalImp).toFloat() else 0.5f
+        val centroidY = if (totalImp > 0) (weightedY / totalImp).toFloat() else 0.5f
 
         // 积分图（带一圈零边，尺寸 (w+1)×(h+1)）
         val iw = w + 1
@@ -112,10 +166,12 @@ object SmartCrop {
                 integral[(y + 1) * iw + (x + 1)] = integral[y * iw + (x + 1)] + rowSum
             }
         }
-        return ImportanceMap(w, h, integral)
+        return ImportanceMap(w, h, integral, lum, centroidX, centroidY)
     }
 
-    private fun bestAlignment(map: ImportanceMap, containerAspect: Float): BiasAlignment {
+    private class Window(val left: Int, val top: Int, val width: Int, val height: Int)
+
+    private fun bestWindow(map: ImportanceMap, containerAspect: Float): Window {
         val w = map.width
         val h = map.height
         val imageAspect = w.toFloat() / h.toFloat()
@@ -129,7 +185,7 @@ object SmartCrop {
             winW = w
             winH = (w / containerAspect).toInt().coerceIn(1, h)
         }
-        if (winW >= w && winH >= h) return BiasAlignment(0f, 0f)
+        if (winW >= w && winH >= h) return Window(0, 0, w, h)
 
         val iw = w + 1
         fun windowSum(left: Int, top: Int): Double {
@@ -148,11 +204,13 @@ object SmartCrop {
         while (top <= h - winH) {
             var left = 0
             while (left <= w - winW) {
-                // 轻微中心先验：同等内容时偏向居中，避免裁切窗贴边跳变
-                val cx = (left + winW / 2f) / w - 0.5f
-                val cy = (top + winH / 2f) / h - 0.5f
-                val centerPenalty = 1.0 - 0.06 * (abs(cx) + abs(cy))
-                val score = windowSum(left, top) * centerPenalty
+                // 重心拉力：窗中心离重要性重心越远扣分越多，防局部强信号拽偏；
+                // 另留极轻的画面中心先验，内容均匀时不贴边
+                val cx = (left + winW / 2f) / w
+                val cy = (top + winH / 2f) / h
+                val centroidPenalty = 1.0 - 0.30 * (abs(cx - map.centroidX) + abs(cy - map.centroidY))
+                val centerPenalty = 1.0 - 0.03 * (abs(cx - 0.5f) + abs(cy - 0.5f))
+                val score = windowSum(left, top) * centroidPenalty * centerPenalty
                 if (score > bestScore) {
                     bestScore = score
                     bestLeft = left
@@ -164,9 +222,17 @@ object SmartCrop {
             if (top == h - winH) break
             top = min(top + stepY, h - winH)
         }
+        return Window(bestLeft, bestTop, winW, winH)
+    }
 
-        val biasX = if (w > winW) ((bestLeft.toFloat() / (w - winW)) * 2f - 1f) else 0f
-        val biasY = if (h > winH) ((bestTop.toFloat() / (h - winH)) * 2f - 1f) else 0f
+    private fun alignmentOf(map: ImportanceMap, win: Window): BiasAlignment {
+        val w = map.width
+        val h = map.height
+        val biasX = if (w > win.width) ((win.left.toFloat() / (w - win.width)) * 2f - 1f) else 0f
+        val biasY = if (h > win.height) ((win.top.toFloat() / (h - win.height)) * 2f - 1f) else 0f
         return BiasAlignment(biasX.coerceIn(-1f, 1f), biasY.coerceIn(-1f, 1f))
     }
+
+    private fun bestAlignment(map: ImportanceMap, containerAspect: Float): BiasAlignment =
+        alignmentOf(map, bestWindow(map, containerAspect))
 }

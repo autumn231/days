@@ -409,6 +409,8 @@ private fun ShowcasePage(
     val liquidState = remember { LiquidGlassState() }
     val liquidBackdropLayer = rememberGraphicsLayer()
     liquidState.backdropLayer = liquidBackdropLayer
+    // 背景照片在卡片区域的平均亮度（智能裁切分析时顺带算出）：卡片字色据此自适应
+    var photoLuminance by remember { mutableStateOf<Float?>(null) }
 
     Box(
         modifier = Modifier
@@ -426,6 +428,7 @@ private fun ShowcasePage(
     ) {
         ShowcaseBackground(
             item,
+            onPhotoTone = { photoLuminance = it },
             sourceModifier = if (glassEnabled) {
                 Modifier.haze(hazeState).then(
                     if (cardStyle == CardStyle.LIQUID) Modifier.liquidSource(liquidState) else Modifier
@@ -446,6 +449,7 @@ private fun ShowcasePage(
                 cardStyle = cardStyle,
                 hazeState = if (glassEnabled) hazeState else null,
                 liquidState = if (glassEnabled) liquidState else null,
+                photoLuminance = photoLuminance,
                 modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
                 accent = accent,
@@ -479,21 +483,32 @@ private fun ShowcasePage(
 }
 
 @Composable
-private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = Modifier) {
+private fun ShowcaseBackground(
+    item: EventWithNodes,
+    sourceModifier: Modifier = Modifier,
+    onPhotoTone: (Float?) -> Unit = {}
+) {
     val event = item.event
     val imagePath = event.imagePath
     val accent = eventColor(event.colorIndex)
 
     // 智能裁切焦点：背景仍铺满全屏（Crop），但裁切窗按 smartcrop 重要性图
-    // 挪到主体一侧，而不是永远居中裁（分析异步进行，未完成前先居中）
+    // 挪到主体一侧，而不是永远居中裁（分析异步进行，未完成前先居中）；
+    // 同一趟分析顺带给出卡片区域的平均亮度，供卡片自适应字色
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var cropAlignment by remember(imagePath) { mutableStateOf<Alignment>(Alignment.Center) }
     LaunchedEffect(imagePath, containerSize) {
         if (!imagePath.isNullOrEmpty() && containerSize.width > 0 && containerSize.height > 0) {
-            cropAlignment = SmartCrop.focalAlignment(
+            val result = SmartCrop.focalPoint(
                 File(imagePath),
                 containerSize.width.toFloat() / containerSize.height.toFloat()
             )
+            if (result != null) {
+                cropAlignment = result.alignment
+                onPhotoTone(result.cardLuminance)
+            }
+        } else if (imagePath.isNullOrEmpty()) {
+            onPhotoTone(null)
         }
     }
 
@@ -692,38 +707,53 @@ private fun ShowcaseCard(
     cardStyle: CardStyle = CardStyle.PAPER,
     hazeState: HazeState? = null,
     liquidState: LiquidGlassState? = null,
+    photoLuminance: Float? = null,
     onClickNumber: () -> Unit
 ) {
     val cardShape = RoundedCornerShape(18.dp)
-    // 三种效果各用一套字色（用户定）：素纸浅灰、毛玻璃深暖灰、液态「深邃玻璃」配白字
-    val numberColor = when (cardStyle) {
-        CardStyle.PAPER, CardStyle.FROSTED -> Color(0xFF3A3530)
-        CardStyle.LIQUID -> Color.White
+    // 字色自适应（用户提议）：背景照片在卡片区域的平均亮度，先按「照片 × 背景压暗罩
+    // × 各效果自身的提亮/压暗」折算成卡面实际明暗，再决定整套字色用深还是用浅。
+    // 数字、小标题、起始日、宣传栏、分隔线全套一起换，不留没被照顾到的文字。
+    // 无照片（预置渐变背景）时：毛玻璃用深字、液态用白字，与 v3.14 一致。
+    val lightText = when (cardStyle) {
+        CardStyle.PAPER -> false
+        CardStyle.FROSTED -> photoLuminance?.let { it * 0.35f + 0.45f < 0.55f } ?: false
+        CardStyle.LIQUID -> photoLuminance?.let { it * 0.34f < 0.55f } ?: true
     }
-    val captionColor = when (cardStyle) {
-        CardStyle.PAPER -> Color(0xFF9C9284)
-        CardStyle.FROSTED -> Color(0xFF6B5D4C)
-        CardStyle.LIQUID -> Color(0xFFEEE9E0)
+    val numberColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFF3A3530)
+        lightText -> Color.White
+        else -> Color(0xFF33302B)
     }
-    val startColor = when (cardStyle) {
-        CardStyle.PAPER -> Color(0xFF8C8175)
-        CardStyle.FROSTED -> Color(0xFF615544)
-        CardStyle.LIQUID -> Color(0xFFDDD6C9)
+    val captionColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFF9C9284)
+        lightText -> Color(0xFFF2EDE3)
+        else -> Color(0xFF5F5546)
     }
-    val promoNameColor = when (cardStyle) {
-        CardStyle.PAPER -> Color(0xFF5E564C)
-        CardStyle.FROSTED -> Color(0xFF463C30)
-        CardStyle.LIQUID -> Color.White
+    val startColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFF8C8175)
+        lightText -> Color(0xFFE3DCCE)
+        else -> Color(0xFF574D40)
     }
-    val promoSloganColor = when (cardStyle) {
-        CardStyle.PAPER -> Color(0xFFA2988A)
-        CardStyle.FROSTED -> Color(0xFF71634F)
-        CardStyle.LIQUID -> Color(0xFFCFC8BA)
+    val promoNameColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFF5E564C)
+        lightText -> Color.White
+        else -> Color(0xFF3F372C)
     }
-    val dividerColor = when (cardStyle) {
-        CardStyle.PAPER -> Color(0xFFEDE6DA)
-        CardStyle.FROSTED -> Color(0xFF3A3530).copy(alpha = 0.08f)
-        CardStyle.LIQUID -> Color.White.copy(alpha = 0.16f)
+    val promoSloganColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFFA2988A)
+        lightText -> Color(0xFFD8D0C0)
+        else -> Color(0xFF6B5F4E)
+    }
+    val dividerColor = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFFEDE6DA)
+        lightText -> Color.White.copy(alpha = 0.16f)
+        else -> Color(0xFF3A3530).copy(alpha = 0.10f)
+    }
+    val stripBg = when {
+        cardStyle == CardStyle.PAPER -> Color(0xFFF6F1E8)
+        lightText -> Color.Black.copy(alpha = 0.22f)
+        else -> Color.White.copy(alpha = 0.35f)
     }
     val density = LocalDensity.current
     val liquidEffectLayer = rememberGraphicsLayer()
@@ -853,17 +883,11 @@ private fun ShowcaseCard(
 
         CardDivider(color = dividerColor)
 
-        // 宣传栏：图标 + 应用名（会一起进入分享图）；玻璃模式下用半透明白衬托
+        // 宣传栏：图标 + 应用名（会一起进入分享图）；衬底色跟随字色深浅一起自适应
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    when (cardStyle) {
-                        CardStyle.PAPER -> Color(0xFFF6F1E8)
-                        CardStyle.FROSTED -> Color.White.copy(alpha = 0.35f)
-                        CardStyle.LIQUID -> Color.White.copy(alpha = 0.10f)
-                    }
-                )
+                .background(stripBg)
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
