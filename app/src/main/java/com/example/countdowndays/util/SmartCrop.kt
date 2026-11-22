@@ -119,15 +119,25 @@ object SmartCrop {
             var sample = 1
             while (photoW / sample > MODEL_INPUT * 2 || photoH / sample > MODEL_INPUT * 2) sample *= 2
             val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-            var bmp: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-            if (bmp.config != Bitmap.Config.ARGB_8888) {
-                val converted = bmp.copy(Bitmap.Config.ARGB_8888, false)
-                bmp.recycle()
-                bmp = converted
-            }
+            val decoded: Bitmap = BitmapFactory.decodeFile(file.absolutePath, opts)
+                ?: run {
+                    lastSaliencyError = "saliency decode returned null"
+                    return null
+                }
+            // 一律换一张干净的 ARGB_8888 副本再进原生层，排除个别厂商解码位图的格式怪癖
+            val bmp = decoded.copy(Bitmap.Config.ARGB_8888, false) ?: decoded
+            if (bmp !== decoded) decoded.recycle()
             val mask = SaliencyNative.runMask(bmp, param, model)
             bmp.recycle()
-            if (mask == null || mask.size != MODEL_INPUT * MODEL_INPUT) return null
+            if (mask == null) {
+                lastSaliencyError = runCatching { SaliencyNative.lastError() }.getOrNull()
+                    ?.takeIf { it.isNotEmpty() } ?: "runMask returned null (no native detail)"
+                return null
+            }
+            if (mask.size != MODEL_INPUT * MODEL_INPUT) {
+                lastSaliencyError = "mask size ${mask.size} != ${MODEL_INPUT * MODEL_INPUT}"
+                return null
+            }
             // min-max 归一化（与 U2-Net 官方后处理一致；转换前后选窗一致性已离线验证）
             var mn = Float.MAX_VALUE
             var mx = -Float.MAX_VALUE

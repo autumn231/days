@@ -17,4 +17,7 @@ object SaliencyNative {
      * @return 320×320 行优先的原始掩膜（未归一化），失败返回 null
      */
     external fun runMask(bitmap: Bitmap, param: ByteArray, model: ByteArray): FloatArray?
+
+    /** 最近一次 runMask 在原生层失败的具体环节（成功时为空） */
+    external fun lastError(): String?
 }
