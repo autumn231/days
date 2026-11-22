@@ -12,6 +12,9 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** 首页排序方式 */
 enum class SortMode { DATE, CREATED, NAME }
 
+/** 展示页卡片效果：素纸（原来的实色卡）/ 毛玻璃 / 液态玻璃 */
+enum class CardStyle { PAPER, FROSTED, LIQUID }
+
 /** 简单的偏好存储 */
 class PrefsManager(context: Context) {
 
@@ -48,6 +51,21 @@ class PrefsManager(context: Context) {
             _sortMode.value = value
         }
 
+    private val _cardStyle = MutableStateFlow(loadCardStyle())
+    val cardStyle: StateFlow<CardStyle> = _cardStyle.asStateFlow()
+
+    var cardStyleValue: CardStyle
+        get() = _cardStyle.value
+        set(value) {
+            prefs.edit { putString(KEY_CARD_STYLE, value.name) }
+            _cardStyle.value = value
+        }
+
+    private fun loadCardStyle(): CardStyle =
+        runCatching {
+            CardStyle.valueOf(prefs.getString(KEY_CARD_STYLE, CardStyle.PAPER.name)!!)
+        }.getOrDefault(CardStyle.PAPER)
+
     private fun loadThemeMode(): ThemeMode =
         runCatching {
             ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.SYSTEM.name)!!)
@@ -62,5 +80,6 @@ class PrefsManager(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC = "dynamic_color"
         private const val KEY_SORT = "sort_mode"
+        private const val KEY_CARD_STYLE = "card_style"
     }
 }

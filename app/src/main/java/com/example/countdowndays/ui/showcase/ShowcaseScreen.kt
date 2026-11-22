@@ -62,7 +62,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -73,12 +72,14 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -96,9 +97,11 @@ import com.example.countdowndays.ui.common.PillButton
 import com.example.countdowndays.ui.theme.BackgroundPresets
 import com.example.countdowndays.ui.theme.backgroundBrush
 import com.example.countdowndays.ui.theme.eventColor
+import com.example.countdowndays.util.CardStyle
 import com.example.countdowndays.util.DateUtils
 import com.example.countdowndays.util.ImageStorage
 import com.example.countdowndays.util.LunarCalendar
+import com.example.countdowndays.util.SmartCrop
 import kotlinx.coroutines.launch
 import java.io.File
 import java.time.LocalDate
@@ -122,10 +125,12 @@ fun ShowcaseScreen(
     /** 关闭后不录制分享图层（JVM 测试的软件画布不支持 RenderNode） */
     captureEnabled: Boolean = true,
     vm: ShowcaseViewModel = com.example.countdowndays.ui.common.appViewModel {
-        ShowcaseViewModel(it.repository)
+        ShowcaseViewModel(it.repository, it.prefs)
     }
 ) {
     val events by vm.events.collectAsStateWithLifecycle()
+    val cardStyle by (vm.cardStyle?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf(CardStyle.PAPER) })
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -211,6 +216,7 @@ fun ShowcaseScreen(
                         item = events[page],
                         captureLayer = if (captureEnabled && page == pagerState.currentPage) captureLayer else null,
                         glassEnabled = captureEnabled,
+                        cardStyle = cardStyle,
                         onCardHeight = { if (page == pagerState.currentPage) cardHeightPx = it }
                     )
                 }
@@ -362,6 +368,8 @@ fun ShowcaseScreen(
         ) {
             BackgroundSheet(
                 current = current,
+                cardStyle = cardStyle,
+                onSelectCardStyle = { vm.setCardStyle(it) },
                 onPickPreset = { index ->
                     vm.setPreset(current.event.id, index)
                     showBackgroundSheet = false
@@ -386,6 +394,7 @@ private fun ShowcasePage(
     item: EventWithNodes,
     captureLayer: GraphicsLayer?,
     glassEnabled: Boolean = true,
+    cardStyle: CardStyle = CardStyle.PAPER,
     onCardHeight: (Int) -> Unit = {}
 ) {
     val event = item.event
@@ -421,6 +430,7 @@ private fun ShowcasePage(
             contentAlignment = Alignment.Center
         ) {
             ShowcaseCard(
+                cardStyle = cardStyle,
                 hazeState = if (glassEnabled) hazeState else null,
                 modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
@@ -460,7 +470,25 @@ private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = 
     val imagePath = event.imagePath
     val accent = eventColor(event.colorIndex)
 
-    Box(Modifier.fillMaxSize().then(sourceModifier)) {
+    // 智能裁切焦点：背景仍铺满全屏（Crop），但裁切窗按 smartcrop 重要性图
+    // 挪到主体一侧，而不是永远居中裁（分析异步进行，未完成前先居中）
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var cropAlignment by remember(imagePath) { mutableStateOf<Alignment>(Alignment.Center) }
+    LaunchedEffect(imagePath, containerSize) {
+        if (!imagePath.isNullOrEmpty() && containerSize.width > 0 && containerSize.height > 0) {
+            cropAlignment = SmartCrop.focalAlignment(
+                File(imagePath),
+                containerSize.width.toFloat() / containerSize.height.toFloat()
+            )
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .then(sourceModifier)
+            .onSizeChanged { containerSize = it }
+    ) {
         // 底色永远先铺一层：即使配图丢失/解码失败，也不会出现整块黑
         Box(
             Modifier
@@ -469,27 +497,12 @@ private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = 
         )
 
         if (!imagePath.isNullOrEmpty()) {
-            val painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) })
-            // 以前整屏 Crop：横图在竖屏上被裁成一条还放大，观感奇怪。
-            // 改为两层：底层同图 Crop 铺满 + 大半径模糊作补边，上层原图完整显示（不裁不拉）
             Image(
-                painter = painter,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(48.dp),
-                contentScale = ContentScale.Crop
-            )
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.22f))
-            )
-            Image(
-                painter = painter,
+                painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) }),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+                contentScale = ContentScale.Crop,
+                alignment = cropAlignment
             )
             Box(
                 Modifier
@@ -497,9 +510,8 @@ private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = 
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                Color.Black.copy(alpha = 0.38f),
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.48f)
+                                Color.Black.copy(alpha = 0.42f),
+                                Color.Black.copy(alpha = 0.62f)
                             )
                         )
                     )
@@ -526,6 +538,8 @@ private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = 
 @Composable
 private fun BackgroundSheet(
     current: EventWithNodes,
+    cardStyle: CardStyle,
+    onSelectCardStyle: (CardStyle) -> Unit,
     onPickPreset: (Int) -> Unit,
     onPickImage: () -> Unit,
     onRemoveImage: () -> Unit
@@ -609,6 +623,37 @@ private fun BackgroundSheet(
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 12.dp)
         )
+
+        Spacer(Modifier.height(22.dp))
+        Text(
+            text = "卡片效果",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton(
+                text = "素纸",
+                selected = cardStyle == CardStyle.PAPER,
+                onClick = { onSelectCardStyle(CardStyle.PAPER) }
+            )
+            PillButton(
+                text = "毛玻璃",
+                selected = cardStyle == CardStyle.FROSTED,
+                onClick = { onSelectCardStyle(CardStyle.FROSTED) }
+            )
+            PillButton(
+                text = "液态玻璃",
+                selected = cardStyle == CardStyle.LIQUID,
+                onClick = { onSelectCardStyle(CardStyle.LIQUID) }
+            )
+        }
+        Text(
+            text = "素纸是原来的实色卡；毛玻璃、液态玻璃会实时模糊卡片背后的背景。卡片效果对所有事件生效。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.padding(top = 12.dp)
+        )
     }
 }
 
@@ -630,19 +675,20 @@ private fun ShowcaseCard(
     startLine: String,
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
+    cardStyle: CardStyle = CardStyle.PAPER,
     hazeState: HazeState? = null,
     onClickNumber: () -> Unit
 ) {
     val cardShape = RoundedCornerShape(18.dp)
+    val glass = cardStyle != CardStyle.PAPER
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(cardShape)
             .then(
-                if (hazeState != null) {
-                    // 毛玻璃：采样卡片背后的背景做模糊，再叠一层奶白 tint；
-                    // 液态玻璃感来自下面的渐变亮边与顶部高光
-                    Modifier.hazeChild(
+                when {
+                    // 毛玻璃：采样卡片背后的背景做模糊，叠奶白 tint
+                    cardStyle == CardStyle.FROSTED && hazeState != null -> Modifier.hazeChild(
                         state = hazeState,
                         style = HazeStyle(
                             backgroundColor = Color(0xFFFDFBF7),
@@ -651,30 +697,42 @@ private fun ShowcaseCard(
                             noiseFactor = 0.03f
                         )
                     )
-                } else {
-                    Modifier.background(Color(0xFFFDFBF7))
+                    // 液态玻璃：tint 更薄、玻璃更透，质感靠高光与亮边（见下方）
+                    cardStyle == CardStyle.LIQUID && hazeState != null -> Modifier.hazeChild(
+                        state = hazeState,
+                        style = HazeStyle(
+                            backgroundColor = Color(0xFFFDFBF7),
+                            tint = HazeTint(Color.White.copy(alpha = 0.14f)),
+                            blurRadius = 18.dp,
+                            noiseFactor = 0.02f
+                        )
+                    )
+                    // 素纸：原来的实色卡
+                    cardStyle == CardStyle.PAPER -> Modifier.background(Color(0xFFFDFBF7))
+                    // 玻璃降级（单测等无 haze 场景）：半透奶白，不至于穿帮
+                    else -> Modifier.background(Color(0xFFFDFBF7).copy(alpha = 0.85f))
                 }
             )
             .then(
-                if (hazeState != null) {
+                if (cardStyle == CardStyle.LIQUID) {
                     Modifier
                         // 顶部高光：上亮下透的微光泽
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.22f),
-                                    Color.White.copy(alpha = 0.04f),
+                                    Color.White.copy(alpha = 0.26f),
+                                    Color.White.copy(alpha = 0.05f),
                                     Color.Transparent
                                 )
                             )
                         )
                         // 渐变亮边：上沿最亮，模拟玻璃边缘折光
                         .border(
-                            1.dp,
+                            1.2.dp,
                             Brush.verticalGradient(
                                 listOf(
-                                    Color.White.copy(alpha = 0.55f),
-                                    Color.White.copy(alpha = 0.10f)
+                                    Color.White.copy(alpha = 0.75f),
+                                    Color.White.copy(alpha = 0.12f)
                                 )
                             ),
                             cardShape
@@ -684,11 +742,17 @@ private fun ShowcaseCard(
                 }
             )
     ) {
-        // 顶部色带 + 事件名（玻璃模式下略透，让底色带一点背景色）
+        // 顶部色带 + 事件名（玻璃下略透，让底色带一点背景色；液态更透）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(if (hazeState != null) accent.copy(alpha = 0.92f) else accent)
+                .background(
+                    when (cardStyle) {
+                        CardStyle.PAPER -> accent
+                        CardStyle.FROSTED -> accent.copy(alpha = 0.92f)
+                        CardStyle.LIQUID -> accent.copy(alpha = 0.82f)
+                    }
+                )
                 .padding(vertical = 16.dp, horizontal = 20.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -741,7 +805,7 @@ private fun ShowcaseCard(
             }
         }
 
-        CardDivider()
+        CardDivider(color = if (glass) Color(0xFF3A3530).copy(alpha = 0.08f) else Color(0xFFEDE6DA))
 
         // 起始日
         Text(
@@ -754,13 +818,19 @@ private fun ShowcaseCard(
             textAlign = TextAlign.Center
         )
 
-        CardDivider()
+        CardDivider(color = if (glass) Color(0xFF3A3530).copy(alpha = 0.08f) else Color(0xFFEDE6DA))
 
         // 宣传栏：图标 + 应用名（会一起进入分享图）；玻璃模式下用半透明白衬托
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(if (hazeState != null) Color.White.copy(alpha = 0.35f) else Color(0xFFF6F1E8))
+                .background(
+                    when (cardStyle) {
+                        CardStyle.PAPER -> Color(0xFFF6F1E8)
+                        CardStyle.FROSTED -> Color.White.copy(alpha = 0.35f)
+                        CardStyle.LIQUID -> Color.White.copy(alpha = 0.20f)
+                    }
+                )
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -796,11 +866,11 @@ private fun ShowcaseCard(
 }
 
 @Composable
-private fun CardDivider() {
+private fun CardDivider(color: Color) {
     Box(
         Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color(0xFF3A3530).copy(alpha = 0.08f))
+            .background(color)
     )
 }
