@@ -1,32 +1,37 @@
 # 倒数日
 
-一个简洁、现代的倒数日 / 纪念日 Android 应用，用 Kotlin + Jetpack Compose 全新编写。
+一个简洁、现代的倒数日 / 纪念日 Android 应用，用 Kotlin + Jetpack Compose 编写。
 
 记录每一个重要的日子 —— 生日、纪念日、考试、旅行……倒数或累计，陪伴你的时光。
 
 ## 功能特性
 
-- **事件管理**：新增、编辑、删除事件，支持名称、日期、描述和配图
-- **倒数/累计**：自动计算距今天数，未来事件显示「还有 N 天」，过去事件显示「已 N 天」，今天显示「就是今天」
-- **置顶 & 搜索**：重要事件一键置顶，顶部搜索框实时筛选
-- **时间线节点**：为每个事件添加多个时间线节点，用竖线串联按时间顺序展示，记录每个重要时刻
-- **图片自适应**：事件配图按方向智能布局 —— 横版铺满顶部、竖版左侧竖条、方框顶部居中
-- **主题模式**：跟随系统 / 浅色 / 深色三种模式，切换即时生效
-- **动态取色**：Android 12+ 支持从壁纸动态提取主题色
-- **Material 3**：采用最新 Material Design 3 设计语言，大圆角卡片、柔和层次
-- **治愈系图标**：像素风格的小太阳，圆润脸庞配柔和光芒
+- **事件管理**：新增、编辑、删除、归档事件，支持名称、日期、描述、配图、分类、农历日期与重复事件（每天 / 每周 / 每月 / 每年）
+- **倒数 / 累计**：自动计算距今天数，未来事件显示「还有 N 天」，过去显示「已 N 天」，今天显示「就是今天」；点一下数字还能切换到累计时长（几年几月几天）
+- **展示页**：全屏大卡片展示重要日子，支持分享与保存为图片
+- **三种卡片效果**：素纸（实色卡）/ 毛玻璃（通透模糊）/ 液态玻璃（真实折射质感），在展示页「背景」面板里切换
+- **AI 智能裁切**：内置轻量显著性模型（U2-NetP + ncnn 推理），自动识别照片主体并居中，人物不再被裁出画面；卡面文字会按背景明暗自动切换深浅色
+- **提醒通知**：可为事件设置提前提醒，重复事件的下一次提醒自动排程
+- **置顶 & 搜索**：重要事件一键置顶（实心 / 空心图钉区分状态），顶部搜索实时筛选，多组排序方式
+- **时间线节点**：为每个事件添加多个时间线节点，按时间顺序串联展示，记录每个重要时刻
+- **备份与恢复**：事件数据可导出备份、再导入恢复，导入带事务保护，失败自动回滚
+- **桌面小组件**：支持深色模式
+- **主题模式**：跟随系统 / 浅色 / 深色三种模式；Android 12+ 支持从壁纸动态取色
+- **Material 3**：大圆角卡片、柔和层次
 
 ## 技术栈
 
 | 分类 | 技术 |
 |------|------|
-| 语言 | Kotlin |
+| 语言 | Kotlin（原生层 JNI / C++ 供模型推理） |
 | UI | Jetpack Compose + Material 3 |
 | 架构 | 单 Activity + Navigation Compose + MVVM |
 | 数据库 | Room (KSP) |
 | 异步 | Kotlin Coroutines + Flow + StateFlow |
 | 图片加载 | Coil |
 | 图片选择 | ActivityResultContracts.PickVisualMedia（系统 Photo Picker） |
+| 玻璃效果 | Haze（毛玻璃）+ 自研 AGSL 折射着色器（液态玻璃） |
+| AI 推理 | ncnn + U2-NetP 显著性模型（约 2.3MB，端侧离线运行） |
 | 构建 | Gradle Kotlin DSL + Version Catalog |
 | CI/CD | 构建机本地脚本（R8 混淆，仅 arm64-v8a） |
 
@@ -44,9 +49,12 @@ app/src/main/java/com/example/countdowndays/
 │   ├── AppDatabase.kt         # 数据库
 │   └── EventRepository.kt     # 仓库
 ├── util/                      # 工具类
-│   ├── DateUtils.kt           # 日期计算
+│   ├── DateUtils.kt           # 日期计算（含农历）
 │   ├── ImageStorage.kt        # 图片存储
-│   └── PrefsManager.kt        # 主题偏好
+│   ├── PrefsManager.kt        # 偏好设置（主题、卡片效果等）
+│   ├── SmartCrop.kt           # 智能裁切（显著性网格 + 裁切窗搜索 + 字色亮度分析）
+│   └── SaliencyNative.kt      # ncnn 推理 JNI 桥
+├── cpp/                       # saliency_jni.cpp：U2-NetP ncnn 推理
 └── ui/                        # UI 层
     ├── theme/                 # 主题、配色、字体
     ├── navigation/            # 路由导航
@@ -54,25 +62,14 @@ app/src/main/java/com/example/countdowndays/
     ├── main/                  # 主页
     ├── editevent/             # 新增/编辑事件
     ├── detail/                # 事件详情 + 时间线
+    ├── showcase/              # 展示页（大卡片、三种卡片效果、分享图）
     ├── settings/              # 设置
     └── about/                 # 关于
 ```
 
 ## 构建
 
-需要 JDK 17 + Android SDK 36。
-
-```bash
-# 编译 Release APK
-./gradlew assembleRelease
-
-# 产物路径
-app/build/outputs/apk/release/app-release.apk
-```
-
-## 构建
-
-需要 JDK 17 + Android SDK 36。
+需要 JDK 17 + Android SDK 36。原生层（ncnn 推理）构建需要 NDK 27 与 ncnn Android 静态包（路径由 `NCNN_DIR` 环境变量指定，缺省指向构建机上的工具目录）。
 
 ```bash
 # 编译 Release APK（开启 R8 + 资源压缩，只打包 arm64-v8a）
@@ -112,13 +109,11 @@ keyPassword=******
 - ABI 与签名校验通过才上传
 - Release Notes 从 [CHANGELOG.md](CHANGELOG.md) 自动提取对应版本内容
 
-发布前请先提升 `app/build.gradle.kts` 中的 `versionCode` 与 `versionName`。
+发布前请先提升 `app/build.gradle.kts` 中的 `versionCode` 与 `versionName`。GitHub Releases 每天只保留当天最新一个版本。
 
 ## 下载
 
-最新版本请前往 [Releases](https://github.com/autumn231/days/releases) 页面下载 APK 安装。
-
-> v2.3 起改用独立签名密钥，与旧版本签名不一致，覆盖安装会失败，需要先卸载旧版本。
+最新版本（v3.22）请前往 [Releases](https://github.com/autumn231/days/releases) 页面下载 APK 安装。
 
 ## 关于
 
