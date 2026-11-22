@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -109,7 +110,9 @@ fun EventDetailScreen(
                     if (ew != null) {
                         IconButton(onClick = { vm.togglePinned() }) {
                             Icon(
-                                Icons.Filled.PushPin,
+                                // 已置顶用实心图钉、未置顶用空心图钉，一眼可辨状态
+                                if (ew.event.isPinned) Icons.Filled.PushPin
+                                else Icons.Outlined.PushPin,
                                 contentDescription = if (ew.event.isPinned) "取消置顶" else "置顶",
                                 tint = if (ew.event.isPinned) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant

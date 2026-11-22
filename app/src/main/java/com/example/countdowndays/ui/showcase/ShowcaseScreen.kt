@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -498,6 +501,14 @@ private fun ShowcaseBackground(
     // 同一趟分析顺带给出卡片四个文字区的合成亮度，供卡片逐区自适应字色
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var cropAlignment by remember(imagePath) { mutableStateOf<Alignment>(Alignment.Center) }
+    // 裁切分析完成前不露图（先显示底色），完成后整张淡入——
+    // 掩盖「先进来是居中裁切、模型算完后背景跳一下」的过程
+    var cropReady by remember(imagePath) { mutableStateOf(false) }
+    val photoAlpha by animateFloatAsState(
+        targetValue = if (cropReady) 1f else 0f,
+        animationSpec = tween(400),
+        label = "bgFade"
+    )
     LaunchedEffect(imagePath, containerSize) {
         if (!imagePath.isNullOrEmpty() && containerSize.width > 0 && containerSize.height > 0) {
             val result = SmartCrop.focalPoint(
@@ -509,6 +520,7 @@ private fun ShowcaseBackground(
                 cropAlignment = result.alignment
                 onCropResult(result)
             }
+            cropReady = true
         } else if (imagePath.isNullOrEmpty()) {
             onCropResult(null)
         }
@@ -531,7 +543,9 @@ private fun ShowcaseBackground(
             Image(
                 painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) }),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(photoAlpha),
                 contentScale = ContentScale.Crop,
                 alignment = cropAlignment
             )
@@ -881,14 +895,33 @@ private fun ShowcaseCard(
                         )
                         Spacer(Modifier.height(8.dp))
                     }
-                    Text(
-                        text = text,
-                        fontFamily = FontFamily.Serif,
-                        fontSize = if (text.length > 6) 42.sp else 100.sp,
-                        color = numberColor,
-                        lineHeight = if (text.length > 6) 56.sp else 112.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    BoxWithConstraints(
+                        Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // 按文本的估算 em 宽度反推字号：整行永远一行放下——
+                        // 「还有 N 天」不再撑爆换行，三/四/五位数也自动缩小适配
+                        val emWidth = text.sumOf { ch ->
+                            when {
+                                ch.isDigit() -> 0.56
+                                ch == ' ' -> 0.30
+                                ch.code > 0xFF -> 1.0
+                                else -> 0.62
+                            }
+                        }.toFloat().coerceAtLeast(0.6f)
+                        val fitSize = (maxWidth.value * 0.96f) / emWidth
+                        val numberSize = fitSize.coerceIn(30f, 100f)
+                        Text(
+                            text = text,
+                            fontFamily = FontFamily.Serif,
+                            fontSize = numberSize.sp,
+                            color = numberColor,
+                            lineHeight = (numberSize * 1.15f).sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                     Text(
                         text = captionText,
                         style = MaterialTheme.typography.labelMedium,
