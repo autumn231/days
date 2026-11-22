@@ -62,13 +62,18 @@ Java_com_example_countdowndays_util_SaliencyNative_runMask(
                           static_cast<size_t>(env->GetArrayLength(param_data)));
     ncnn::Net net;
     int ret = net.load_param_mem(param_str.c_str());
-    if (ret == 0) {
-        ret = net.load_model(reinterpret_cast<const unsigned char *>(model_bytes));
+    if (ret != 0) {
+        env->ReleaseByteArrayElements(param_data, param_bytes, JNI_ABORT);
+        env->ReleaseByteArrayElements(model_data, model_bytes, JNI_ABORT);
+        return fail(env, "ncnn load_param_mem failed ret=" + std::to_string(ret));
     }
+    // 注意：load_model(内存版) 成功时返回的是「消费的字节数」（正数），不是 0——
+    // v3.17–v3.19 误把非 0 当失败，模型其实加载成功了却被误判回落。
+    ret = net.load_model(reinterpret_cast<const unsigned char *>(model_bytes));
     env->ReleaseByteArrayElements(param_data, param_bytes, JNI_ABORT);
     env->ReleaseByteArrayElements(model_data, model_bytes, JNI_ABORT);
-    if (ret != 0) {
-        return fail(env, "ncnn load failed ret=" + std::to_string(ret));
+    if (ret <= 0) {
+        return fail(env, "ncnn load_model failed ret=" + std::to_string(ret));
     }
 
     ncnn::Extractor ex = net.create_extractor();
