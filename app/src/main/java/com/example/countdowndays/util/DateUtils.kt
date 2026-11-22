@@ -32,6 +32,17 @@ object DateUtils {
         date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     /**
+     * Material3 DatePicker 专用换算：选择器内部一律按 UTC 解释毫秒，
+     * 而 App 内日期存的是本地零点毫秒（UTC+8 下 = 前一天 16:00 UTC），
+     * 直接喂给选择器会让它停在早一天（实测复现）。进出选择器都经这里转换。
+     */
+    fun toUtcMillis(date: LocalDate): Long =
+        date.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+
+    fun fromUtcMillis(millis: Long): LocalDate =
+        Instant.ofEpochMilli(millis).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+
+    /**
      * 目标日期相对今天的天数差；未来为正，过去为负，今天为 0。
      * 按日历日相减，不受夏令时（23/25 小时的一天）影响。
      */

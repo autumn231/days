@@ -459,13 +459,18 @@ fun AddEditEventScreen(
     }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = state.dateMillis)
+        // 选择器按 UTC 解释毫秒，进出都要换算，否则会差一天（见 DateUtils.toUtcMillis）
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = DateUtils.toUtcMillis(DateUtils.toLocalDate(state.dateMillis))
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(onClick = {
                     showDatePicker = false
-                    datePickerState.selectedDateMillis?.let { vm.setDate(it) }
+                    datePickerState.selectedDateMillis?.let {
+                        vm.setDate(DateUtils.toMillis(DateUtils.fromUtcMillis(it)))
+                    }
                 }) { Text("确定") }
             },
             dismissButton = {

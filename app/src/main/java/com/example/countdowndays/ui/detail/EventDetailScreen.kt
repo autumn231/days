@@ -480,7 +480,10 @@ private fun AddNodeDialog(
     var showDate by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
 
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = dateMillis)
+    // 选择器按 UTC 解释毫秒，进出都要换算，否则会差一天（见 DateUtils.toUtcMillis）
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = DateUtils.toUtcMillis(DateUtils.toLocalDate(dateMillis))
+    )
     val timePickerState = rememberTimePickerState(initialHour = hour, initialMinute = minute)
 
     AlertDialog(
@@ -533,7 +536,9 @@ private fun AddNodeDialog(
             confirmButton = {
                 TextButton(onClick = {
                     showDate = false
-                    datePickerState.selectedDateMillis?.let { dateMillis = DateUtils.startOfDay(it) }
+                    datePickerState.selectedDateMillis?.let {
+                        dateMillis = DateUtils.toMillis(DateUtils.fromUtcMillis(it))
+                    }
                 }) { Text("确定") }
             },
             dismissButton = { TextButton(onClick = { showDate = false }) { Text("取消") } }

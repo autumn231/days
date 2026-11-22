@@ -62,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -82,6 +83,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.rememberAsyncImagePainter
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import com.example.countdowndays.R
 import com.example.countdowndays.data.EventWithNodes
 import com.example.countdowndays.data.indexNearestToday
@@ -204,6 +210,7 @@ fun ShowcaseScreen(
                     ShowcasePage(
                         item = events[page],
                         captureLayer = if (captureEnabled && page == pagerState.currentPage) captureLayer else null,
+                        glassEnabled = captureEnabled,
                         onCardHeight = { if (page == pagerState.currentPage) cardHeightPx = it }
                     )
                 }
@@ -270,21 +277,23 @@ fun ShowcaseScreen(
                 enter = fadeIn(tween(320, delayMillis = 100)) +
                     slideInVertically(tween(320, delayMillis = 100)) { it / 3 }
             ) {
-                LazyRow(
+                // 四个按钮固定均分一行：以前用 LazyRow 能左右滑动，用户要求钉死、放得下
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
+                        .padding(horizontal = 16.dp)
                         .padding(bottom = 10.dp),
-                    contentPadding = PaddingValues(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    item {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         PillButton(
                             text = "分享",
                             icon = Icons.Filled.Share,
                             filled = true,
                             color = accent,
+                            compact = true,
                             onClick = {
                                 scope.launch {
                                     runCatching { captureForShare() }
@@ -299,11 +308,12 @@ fun ShowcaseScreen(
                             }
                         )
                     }
-                    item {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         PillButton(
                             text = "存为图片",
                             icon = Icons.Filled.SaveAlt,
                             color = accent,
+                            compact = true,
                             onClick = {
                                 scope.launch {
                                     runCatching { captureForShare() }
@@ -321,19 +331,21 @@ fun ShowcaseScreen(
                             }
                         )
                     }
-                    item {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         PillButton(
                             text = "背景",
                             icon = Icons.Outlined.Image,
                             color = accent,
+                            compact = true,
                             onClick = { showBackgroundSheet = true }
                         )
                     }
-                    item {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         PillButton(
                             text = if (current.event.isPinned) "已置顶" else "置顶",
                             icon = Icons.Filled.Flag,
                             color = accent,
+                            compact = true,
                             onClick = { vm.togglePin(current.event.id, current.event.isPinned) }
                         )
                     }
@@ -373,6 +385,7 @@ fun ShowcaseScreen(
 private fun ShowcasePage(
     item: EventWithNodes,
     captureLayer: GraphicsLayer?,
+    glassEnabled: Boolean = true,
     onCardHeight: (Int) -> Unit = {}
 ) {
     val event = item.event
@@ -381,6 +394,8 @@ private fun ShowcasePage(
     var periodMode by remember(event.id) { mutableStateOf(false) }
     // 已经过去的日子：非重复且起始日在今天之前，或重复已到结束日
     val isPast = occ.ended || (!occ.isRepeating && occ.start.isBefore(LocalDate.now()))
+    // 毛玻璃取样源：背景登记为 source，卡片用 hazeChild 采样背后的内容做模糊
+    val hazeState = remember { HazeState() }
 
     Box(
         modifier = Modifier
@@ -396,7 +411,7 @@ private fun ShowcasePage(
                 }
             )
     ) {
-        ShowcaseBackground(item)
+        ShowcaseBackground(item, sourceModifier = if (glassEnabled) Modifier.haze(hazeState) else Modifier)
 
         Box(
             modifier = Modifier
@@ -406,6 +421,7 @@ private fun ShowcasePage(
             contentAlignment = Alignment.Center
         ) {
             ShowcaseCard(
+                hazeState = if (glassEnabled) hazeState else null,
                 modifier = Modifier.onGloballyPositioned { onCardHeight(it.size.height) },
                 name = event.name,
                 accent = accent,
@@ -439,52 +455,71 @@ private fun ShowcasePage(
 }
 
 @Composable
-private fun ShowcaseBackground(item: EventWithNodes) {
+private fun ShowcaseBackground(item: EventWithNodes, sourceModifier: Modifier = Modifier) {
     val event = item.event
     val imagePath = event.imagePath
     val accent = eventColor(event.colorIndex)
 
-    // 底色永远先铺一层：即使配图丢失/解码失败，也不会出现整块黑
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(backgroundBrush(event.backgroundPreset, accent))
-    )
+    Box(Modifier.fillMaxSize().then(sourceModifier)) {
+        // 底色永远先铺一层：即使配图丢失/解码失败，也不会出现整块黑
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(backgroundBrush(event.backgroundPreset, accent))
+        )
 
-    if (!imagePath.isNullOrEmpty()) {
-        Image(
-            painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) }),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Black.copy(alpha = 0.42f),
-                            Color.Black.copy(alpha = 0.62f)
+        if (!imagePath.isNullOrEmpty()) {
+            val painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath) })
+            // 以前整屏 Crop：横图在竖屏上被裁成一条还放大，观感奇怪。
+            // 改为两层：底层同图 Crop 铺满 + 大半径模糊作补边，上层原图完整显示（不裁不拉）
+            Image(
+                painter = painter,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(48.dp),
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.22f))
+            )
+            Image(
+                painter = painter,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.38f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.48f)
+                            )
                         )
                     )
-                )
-        )
-    } else {
-        // 轻微暗角，避免浅色背景上白色文字看不清
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Black.copy(alpha = 0.16f),
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.22f)
+            )
+        } else {
+            // 轻微暗角，避免浅色背景上白色文字看不清
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Black.copy(alpha = 0.16f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.22f)
+                            )
                         )
                     )
-                )
-        )
+            )
+        }
     }
 }
 
@@ -595,19 +630,65 @@ private fun ShowcaseCard(
     startLine: String,
     modifier: Modifier = Modifier,
     eyebrow: String? = null,
+    hazeState: HazeState? = null,
     onClickNumber: () -> Unit
 ) {
+    val cardShape = RoundedCornerShape(18.dp)
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFFFDFBF7))
+            .clip(cardShape)
+            .then(
+                if (hazeState != null) {
+                    // 毛玻璃：采样卡片背后的背景做模糊，再叠一层奶白 tint；
+                    // 液态玻璃感来自下面的渐变亮边与顶部高光
+                    Modifier.hazeChild(
+                        state = hazeState,
+                        style = HazeStyle(
+                            backgroundColor = Color(0xFFFDFBF7),
+                            tint = HazeTint(Color(0xFFFDFBF7).copy(alpha = 0.42f)),
+                            blurRadius = 24.dp,
+                            noiseFactor = 0.03f
+                        )
+                    )
+                } else {
+                    Modifier.background(Color(0xFFFDFBF7))
+                }
+            )
+            .then(
+                if (hazeState != null) {
+                    Modifier
+                        // 顶部高光：上亮下透的微光泽
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.22f),
+                                    Color.White.copy(alpha = 0.04f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                        // 渐变亮边：上沿最亮，模拟玻璃边缘折光
+                        .border(
+                            1.dp,
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.55f),
+                                    Color.White.copy(alpha = 0.10f)
+                                )
+                            ),
+                            cardShape
+                        )
+                } else {
+                    Modifier
+                }
+            )
     ) {
-        // 顶部色带 + 事件名
+        // 顶部色带 + 事件名（玻璃模式下略透，让底色带一点背景色）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(accent)
+                .background(if (hazeState != null) accent.copy(alpha = 0.92f) else accent)
                 .padding(vertical = 16.dp, horizontal = 20.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -675,11 +756,11 @@ private fun ShowcaseCard(
 
         CardDivider()
 
-        // 宣传栏：图标 + 应用名（会一起进入分享图）
+        // 宣传栏：图标 + 应用名（会一起进入分享图）；玻璃模式下用半透明白衬托
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF6F1E8))
+                .background(if (hazeState != null) Color.White.copy(alpha = 0.35f) else Color(0xFFF6F1E8))
                 .padding(horizontal = 18.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -720,6 +801,6 @@ private fun CardDivider() {
         Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color(0xFFEDE6DA))
+            .background(Color(0xFF3A3530).copy(alpha = 0.08f))
     )
 }

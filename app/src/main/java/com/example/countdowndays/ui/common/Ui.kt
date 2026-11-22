@@ -117,7 +117,9 @@ fun PillButton(
     selected: Boolean = false,
     filled: Boolean = false,
     icon: ImageVector? = null,
-    color: Color? = null
+    color: Color? = null,
+    /** 紧凑版：内边距与字号收一号，用于必须在一行内固定排满的操作栏 */
+    compact: Boolean = false
 ) {
     val container = when {
         color != null -> color
@@ -139,8 +141,9 @@ fun PillButton(
                 } else Modifier
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = if (compact) 10.dp else 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
         if (icon != null) {
             Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(15.dp))
@@ -148,9 +151,10 @@ fun PillButton(
         }
         Text(
             text = text,
-            style = MaterialTheme.typography.labelLarge,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
             color = content,
-            fontWeight = if (selected || filled) FontWeight.SemiBold else FontWeight.Medium
+            fontWeight = if (selected || filled) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1
         )
     }
 }
