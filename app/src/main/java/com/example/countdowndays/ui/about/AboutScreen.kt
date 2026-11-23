@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Person
@@ -50,7 +49,8 @@ import androidx.compose.ui.unit.dp
 import com.example.countdowndays.R
 
 private const val AUTHOR_URL = "https://github.com/autumn231"
-private const val AUTHOR_DISPLAY = "autumn231"
+// v4.5.3：作者只改展示文案为「秋」，点击跳转目标仍是 GitHub 主页
+private const val AUTHOR_DISPLAY = "秋"
 private const val REPO_URL = "https://github.com/autumn231/days"
 private const val REPO_DISPLAY = "github.com/autumn231/days"
 private const val LICENSE_NAME = "MIT License"
@@ -82,7 +82,7 @@ SOFTWARE.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit, onOpenDiagnostics: () -> Unit = {}) {
+fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val version = remember {
         runCatching {
@@ -149,7 +149,9 @@ fun AboutScreen(onBack: () -> Unit, onOpenDiagnostics: () -> Unit = {}) {
             Spacer(Modifier.size(16.dp))
 
             // 作者与开源信息卡片（v4.0：移除联系方式，加仓库地址与开源许可；
-            // v4.1：作者行改 GitHub 账号 autumn231，点击跳个人主页）
+            // v4.1：作者行改 GitHub 账号 autumn231，点击跳个人主页；
+            // v4.5.3：作者显示名改「秋」（链接不变）；v4.5.2 的组件诊断
+            // 入口、诊断页与全部诊断代码已整体删除）
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -185,12 +187,6 @@ fun AboutScreen(onBack: () -> Unit, onOpenDiagnostics: () -> Unit = {}) {
                         label = "开源许可",
                         value = LICENSE_NAME,
                         onClick = { showLicense = true }
-                    )
-                    InfoRow(
-                        icon = Icons.Filled.BugReport,
-                        label = "组件诊断",
-                        value = "小部件不跟随所选事件时，点这里生成诊断信息",
-                        onClick = onOpenDiagnostics
                     )
                 }
             }

@@ -198,10 +198,8 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
  * 镜像写到实际放置 id 名下，保存后修剪不在放置列表里的残留键；解析统一走
  * resolveConfiguredEventId，配置界面的 ✓ 与渲染同源、永不互相矛盾。多实例
  * 维持各自键优先的现状语义，规范槽只在单实例时生效。
- * v4.5.2（诊断版）：行为逻辑与 v4.5.1 完全一致，只加仪表——配置界面打开、
- * 每次保存、每次渲染三处留痕进偏好（见 PrefsManager 的 diag_ 键），新增
- * 「组件诊断」页一键 dump＋复制（见 HeroDiagnostics），配置界面底部加一行
- * 与渲染同口径的「组件将显示」结论行。证据回来再定下一版怎么修。
+ * v4.5.2 曾为取证加过一版诊断仪表（diag_ 留痕＋诊断页），证据定案后
+ * 已在 v4.5.3 整体删除，只保留回执自检必需的最小功能状态。
  */
 class HeroDaysWidget : GlanceAppWidget() {
 
@@ -397,10 +395,10 @@ class HeroDaysWidget : GlanceAppWidget() {
                 "placed=${placedIds.toList()} configuredId=$configuredId " +
                 "heroId=${hero?.first?.id} heroName=${hero?.first?.name}"
             Log.i("HeroWidgetRender", trace)
-            // v4.5.2 诊断留痕：最近一次渲染的解析全过程存进偏好，诊断页
-            // 读出来展示。用户在真机上跑一遍就能把这行证据带回来，不再
-            // 靠 logcat（真机上抓不到）盲猜。只记录，不影响渲染结果。
-            runCatching { prefs.recordHeroRenderTrace(trace) }
+            // v4.5.3 回执自检状态：只记这次渲染认到的选择与时刻，供保存
+            // 后 +7s 的回执检查比对（见 HeroReceiptCheck）；只记录，
+            // 不影响渲染结果。
+            runCatching { prefs.recordHeroLastRender(configuredId) }
             return hero
         }
 
@@ -430,32 +428,8 @@ class HeroDaysWidget : GlanceAppWidget() {
                 }
                 prefs.setHeroCanonicalSelection(eventId)
             }
-            var pruned: Set<Int> = emptySet()
             if (placedIds.isNotEmpty()) {
-                pruned = prefs.pruneHeroWidgetConfigs(placedIds.toSet() + appWidgetId)
-            }
-            // v4.5.2 诊断留痕：把这次保存的完整入参记下来——保存用的 id、
-            // 所选事件、保存瞬间的放置实例、规范槽写没写（没写就记下卡住的
-            // 分支条件）、修剪掉哪些键。只记录，上面的保存行为一字未改；
-            // 记录失败也不许影响保存本身。
-            runCatching {
-                val canonicalWritten = placedIds.size == 1
-                prefs.recordHeroSaveTrace(
-                    PrefsManager.HeroSaveTrace(
-                        appWidgetId = appWidgetId,
-                        eventId = eventId,
-                        placedIds = placedIds,
-                        canonicalWritten = canonicalWritten,
-                        canonicalNote = if (canonicalWritten) {
-                            "placedIds 恰好 1 个，规范槽已覆盖写"
-                        } else {
-                            "placedIds.size=${placedIds.size}，" +
-                                "规范槽要求放置实例恰好 1 个，未写"
-                        },
-                        prunedIds = pruned,
-                        atMillis = System.currentTimeMillis()
-                    )
-                )
+                prefs.pruneHeroWidgetConfigs(placedIds.toSet() + appWidgetId)
             }
         }
 

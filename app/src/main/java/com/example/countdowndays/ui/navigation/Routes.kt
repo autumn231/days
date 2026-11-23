@@ -4,7 +4,6 @@ object Routes {
     const val MAIN = "main"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
-    const val HERO_DIAGNOSTICS = "hero_diagnostics"
     const val CALENDAR = "calendar"
     const val DATE_CALC = "datecalc"
     const val ARCHIVE = "archive"

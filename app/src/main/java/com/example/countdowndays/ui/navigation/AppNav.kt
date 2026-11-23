@@ -12,7 +12,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.countdowndays.ui.about.AboutScreen
-import com.example.countdowndays.ui.about.HeroDiagnosticsScreen
 import com.example.countdowndays.ui.archive.ArchiveScreen
 import com.example.countdowndays.ui.calendar.CalendarScreen
 import com.example.countdowndays.ui.detail.EventDetailScreen
@@ -144,13 +143,8 @@ fun AppNav(
 
         composable(Routes.ABOUT) {
             AboutScreen(
-                onBack = { nav.popBackStack() },
-                onOpenDiagnostics = { nav.navigate(Routes.HERO_DIAGNOSTICS) }
+                onBack = { nav.popBackStack() }
             )
-        }
-
-        composable(Routes.HERO_DIAGNOSTICS) {
-            HeroDiagnosticsScreen(onBack = { nav.popBackStack() })
         }
     }
 }

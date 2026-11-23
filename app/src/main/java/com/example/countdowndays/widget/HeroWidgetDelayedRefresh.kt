@@ -2,14 +2,12 @@ package com.example.countdowndays.widget
 
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import androidx.glance.appwidget.AppWidgetId
+import com.example.countdowndays.CountdownApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +38,12 @@ import kotlinx.coroutines.launch
  * 不会反过来再排一份闹钟，没有自激循环；且本身幂等——渲染决策是自洽的
  * （见 HeroDaysWidget.resolveHeroForInstance），没配置就按自动口径出帧。
  * 日志沿用 HeroWidgetCfg / HeroWidgetRender 并注明 delayed 与来源。
+ *
+ * v4.5.3：配置保存不再排这条 +3s 闹钟，改排 [HeroReceiptCheck] 的回执
+ * 检查（+7s、独立 requestCode 4502）。此前三个来源共用同一个
+ * PendingIntent（4501），周期 onUpdate 排的 FIRST_UPDATE 会把保存的
+ * 兜底顶掉；本版 4501 只留给 FIRST_ENABLE / FIRST_UPDATE，保存链有
+ * 自己独立的编号，互不覆盖。
  */
 internal object HeroDelayedRefresh {
 
@@ -69,9 +73,9 @@ internal object HeroDelayedRefresh {
             val alarms = appContext.getSystemService(AlarmManager::class.java)
                 ?: error("AlarmManager 不可用")
             val triggerAt = System.currentTimeMillis() + DELAY_SECONDS * 1000L
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            val exact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 alarms.canScheduleExactAlarms()
-            ) {
+            if (exact) {
                 alarms.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(appContext)
                 )
@@ -82,7 +86,8 @@ internal object HeroDelayedRefresh {
             }
             Log.i(
                 "HeroWidgetCfg",
-                "delayed 已排兜底重渲染(alarm) source=$source delay=${DELAY_SECONDS}s"
+                "delayed 已排兜底重渲染(alarm) source=$source delay=${DELAY_SECONDS}s " +
+                    "exact=$exact"
             )
         }.onFailure {
             Log.w("HeroWidgetCfg", "delayed 排兜底重渲染失败 source=$source", it)
@@ -109,22 +114,108 @@ class HeroDelayedRefreshReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
-                val placedIds = runCatching {
-                    AppWidgetManager.getInstance(appContext).getAppWidgetIds(
-                        ComponentName(appContext, HeroDaysWidgetReceiver::class.java)
-                    )
-                }.getOrDefault(IntArray(0))
-                val targets = HeroDelayedRefresh.renderTargets(placedIds)
+                val placedIds = HeroWidgetRefresher.placedIds(appContext)
+                val targets = HeroDelayedRefresh.renderTargets(placedIds.toIntArray())
                 Log.i(
                     "HeroWidgetRender",
-                    "delayed 兜底重渲染触发(alarm) placed=${placedIds.toList()} targets=$targets"
+                    "delayed 兜底重渲染触发(alarm) placed=$placedIds targets=$targets"
                 )
-                targets.forEach { id ->
-                    runCatching {
-                        HeroDaysWidget().update(appContext, AppWidgetId(id))
-                    }.onFailure {
-                        Log.w("HeroWidgetRender", "delayed 兜底重渲染失败 id=$id", it)
-                    }
+                // v4.5.3：实际刷新改走共享通道集（HeroWidgetRefresher）
+                HeroWidgetRefresher.glanceUpdateEach(appContext, "闹钟延迟刷新")
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+}
+
+/**
+ * 渲染回执自检（v4.5.3 新增）：配置保存后 +7 秒的一次性核对。
+ *
+ * 背景：v4.5.2 真机取证定案断点在「保存 → 触发重渲染」——保存侧全对，
+ * 但主动刷新通道在 HyperOS 上静默失效，保存后没有任何新渲染。光把通
+ * 道加多还不够，失败必须能**自愈**：保存时配置界面已把期望（保存时刻
+ * ＋渲染应解析出的选择）记进偏好（见 PrefsManager 的
+ * HeroRefreshExpectation），每次渲染也只记一份最小结果（认到的选择
+ * ＋时刻）；本闹钟到点拿两者比对（[evaluateHeroReceipt]）：
+ *
+ * - 达标 → 什么都不做；
+ * - 未达标/无渲染记录 → 升级走广播通道（宿主 onUpdate 同款路径，该机
+ *   上唯一有出帧实证）再刷一次＋Glance update 兜底。
+ *
+ * 闹钟与 [HeroDelayedRefresh] 完全分离：独立 action、独立 requestCode
+ * （4502），不再出现「周期 onUpdate 把保存兜底顶掉」的共用覆盖。检查
+ * 结论只记日志，不留任何诊断痕迹（v4.5.2 的诊断代码已整体删除）。
+ */
+internal object HeroReceiptCheck {
+
+    /** 检查延迟：给即时刷新留足出帧时间，又不让用户盯着错帧太久 */
+    const val DELAY_SECONDS = 7L
+
+    /** 回执检查广播的 action（显式 Intent 直达 Receiver，只作双保险校验） */
+    const val ACTION = "com.example.countdowndays.action.HERO_RECEIPT_CHECK"
+
+    /** 独立请求码：与 HeroDelayedRefresh 的 4501 分开，互不覆盖 */
+    private const val REQUEST_CODE = 4502
+
+    /** 排一次回执检查；失败只记日志——即时刷新通道仍是主送达路径 */
+    fun schedule(context: Context) {
+        runCatching {
+            val appContext = context.applicationContext
+            val alarms = appContext.getSystemService(AlarmManager::class.java)
+                ?: error("AlarmManager 不可用")
+            val triggerAt = System.currentTimeMillis() + DELAY_SECONDS * 1000L
+            val exact = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                alarms.canScheduleExactAlarms()
+            if (exact) {
+                alarms.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(appContext)
+                )
+            } else {
+                alarms.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent(appContext)
+                )
+            }
+            Log.i(
+                "HeroWidgetCfg",
+                "receipt 已排回执检查(alarm) delay=${DELAY_SECONDS}s exact=$exact"
+            )
+        }.onFailure {
+            Log.w("HeroWidgetCfg", "receipt 排回执检查失败", it)
+        }
+    }
+
+    private fun pendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, HeroReceiptCheckReceiver::class.java)
+            .setAction(ACTION)
+        return PendingIntent.getBroadcast(
+            context, REQUEST_CODE, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+}
+
+/** 回执检查的闹钟接收器：到点比对最近渲染记录，未达标就升级广播再刷 */
+class HeroReceiptCheckReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != HeroReceiptCheck.ACTION) return
+        val appContext = context.applicationContext
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            try {
+                val prefs = (appContext as CountdownApp).container.prefs
+                val expectation = prefs.heroRefreshExpectation()
+                val render = prefs.heroLastRender()
+                val verdict = evaluateHeroReceipt(expectation, render)
+                Log.i(
+                    "HeroWidgetRender",
+                    "receipt 回执检查 verdict=$verdict 期望=$expectation 最近渲染=$render"
+                )
+                if (verdict != HeroReceiptVerdict.MET) {
+                    // 未达标/无渲染记录：升级走广播通道（主）＋Glance update 兜底
+                    HeroWidgetRefresher.sendUpdateBroadcast(appContext)
+                    HeroWidgetRefresher.glanceUpdateEach(appContext, "回执升级update")
                 }
             } finally {
                 pending.finish()

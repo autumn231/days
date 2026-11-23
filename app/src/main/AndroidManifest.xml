@@ -78,6 +78,11 @@
             android:name=".widget.HeroDelayedRefreshReceiver"
             android:exported="false" />
 
+        <!-- 主视觉组件渲染回执检查的闹钟接收器（v4.5.3）：只接本应用自己的显式广播 -->
+        <receiver
+            android:name=".widget.HeroReceiptCheckReceiver"
+            android:exported="false" />
+
         <!-- 主视觉组件的选事件配置界面（添加组件时拉起，支持 reconfigure 的启动器可重进改选） -->
         <activity
             android:name=".widget.HeroWidgetConfigureActivity"

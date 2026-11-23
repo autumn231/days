@@ -51,9 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.glance.appwidget.AppWidgetId
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
 import com.example.countdowndays.CountdownApp
 import com.example.countdowndays.MainActivity
 import com.example.countdowndays.data.EventEntity
@@ -64,6 +62,9 @@ import com.example.countdowndays.ui.theme.eventColor
 import com.example.countdowndays.util.DateUtils
 import com.example.countdowndays.util.ThemeMode
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -71,7 +72,8 @@ import kotlinx.coroutines.launch
  * 支持 reconfigure 的启动器里长按组件也能再进来改选。
  *
  * 列表 = 全部未归档事件（名称 / 下一次日期 / 剩余天数），外加一行「自动」。
- * 点中即保存（按 appWidgetId 存偏好）→ 主动刷新该组件 → RESULT_OK 关闭；
+ * 点中即保存：同步落盘 → 排回执检查兜底 → 回 RESULT_OK 关闭，刷新随后
+ * 由独立协程多通道发出（v4.5.3 解耦，见 confirmSelection）；
  * 中途退出保持 RESULT_CANCELED，新加组件会被系统取消、改选则保持原配置。
  */
 class HeroWidgetConfigureActivity : ComponentActivity() {
@@ -92,9 +94,6 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 
         val container = (application as CountdownApp).container
         val prefs = container.prefs
-        // v4.5.2 诊断留痕：记下本界面这次打开收到的 appWidgetId，诊断页
-        // dump 时与渲染侧、系统枚举三方对照。只记录，不影响任何行为。
-        runCatching { prefs.recordHeroConfigureOpen(appWidgetId) }
         val placedIds = placedHeroWidgetIds()
         // ✓ 判定与渲染同源（v4.5.1）：走 HeroDaysWidget.resolveConfiguredEventId
         // 同一解析入口，不再只读本界面 id 名下的键——旧口径下出现过「✓ 在 A
@@ -110,15 +109,6 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
                 "已放置实例=$placedIds"
         )
 
-        // v4.5.2 诊断结论行的数据：用与渲染相同的入参口径再算一份结论——
-        // 单实例时渲染的主键是系统登记的放置 id，不是本界面收到的 id。
-        // ✓ 判定仍用上面的 currentSelection（配置侧 id 口径，行为不变）；
-        // 结论行回答的是「组件实际会显示什么」，两个口径并存是有意的，
-        // 对照着看才能分清断点在解析侧还是刷新侧。
-        val renderPrimaryId = if (placedIds.size == 1) placedIds.single() else appWidgetId
-        val widgetConclusionId =
-            HeroDaysWidget.resolveConfiguredEventId(prefs, renderPrimaryId, placedIds)
-
         setContent {
             val mode by prefs.themeMode.collectAsStateWithLifecycle()
             val dynamic by prefs.dynamicColor.collectAsStateWithLifecycle()
@@ -131,9 +121,6 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
             CountdownTheme(darkTheme = darkTheme, dynamicColor = dynamic) {
                 HeroWidgetConfigureScreen(
                     currentEventId = currentSelection,
-                    conclusionEventId = widgetConclusionId,
-                    canonicalEventId = prefs.heroCanonicalSelection(),
-                    placedCount = placedIds.size,
                     loadEvents = { container.repository.getActiveEventsLight() },
                     onPick = { eventId -> confirmSelection(appWidgetId, eventId) },
                     onOpenApp = {
@@ -146,68 +133,60 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
         }
     }
 
-    /** 保存选择 → 刷新这个组件实例 → 回 RESULT_OK 给启动器 */
+    /**
+     * 保存选择（v4.5.3 解耦重排）：落盘 → 记回执期望 → 排回执检查 →
+     * 回 RESULT_OK → 独立协程刷新。
+     *
+     * v4.5.2 及以前四步串行挤在一个协程里、刷新排在最前：update() 一旦
+     * 挂起、或 Activity 被销毁导致协程取消，排闹钟与 setResult 被连带
+     * 拖死（保存已 commit 落盘，所以 ✓ 是对的、组件却纹丝不动——真机
+     * dump 实证）。本版把顺序倒过来：同步落盘在主线程直接执行、不进
+     * 协程；兜底排程与结果返回其次；刷新最后单独用不依附 Activity
+     * 生命周期的协程发——刷新再失败也连带不了前面任何一步。
+     *
+     * 刷新通道（见 HeroWidgetRefresher）：广播为主通道（走宿主 onUpdate
+     * 同款路径）、Glance update() 并行尝试、updateAll 补充。+7s 还有
+     * 回执检查兜底：渲染没跟上就自动升级广播再刷。
+     */
     private fun confirmSelection(appWidgetId: Int, eventId: Long?) {
         val container = (application as CountdownApp).container
-        lifecycleScope.launch {
-            // 保存走生产保存路径 saveHeroSelection（内部 commit() 同步落盘）：
-            // 先把选择钉死，后面不管哪条刷新路径真正跑起来，provideGlance
-            // 读到的都是新选择。v4.5.1 起单实例时还同步写规范槽＋镜像到实际
-            // 放置 id，并修剪残留键——细节见 saveHeroSelection 的注释，这是
-            // 「改选只跟随一次」换存法的主体，不许绕过它直接写 per-id 键。
-            val placedIds = placedHeroWidgetIds()
-            HeroDaysWidget.saveHeroSelection(container.prefs, appWidgetId, eventId, placedIds)
-            Log.i(
-                "HeroWidgetCfg",
-                "保存选择 appWidgetId=$appWidgetId eventId=$eventId " +
-                    "已放置实例=$placedIds 规范槽=${container.prefs.heroCanonicalSelection()} " +
-                    "已存配置=${container.prefs.heroWidgetConfigs()}"
-            )
-            refreshHeroWidget()
-            // 再排一次延迟兜底重渲染——首次添加时系统的初始渲染可能抢在配置
-            // 落盘之前跑完、先按自动口径出一帧，几秒后按已落盘配置重出一帧
-            // 把它纠正过来（机制见 HeroDelayedRefresh，v4.5 起走 AlarmManager
-            // 精确闹钟，本 Activity 进程被杀也照样触发）
-            HeroDelayedRefresh.schedule(
-                applicationContext,
-                HeroDelayedRefresh.Source.CONFIGURE_SAVE
-            )
-            setResult(
-                Activity.RESULT_OK,
-                Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            )
-            finish()
-        }
-    }
-
-    /**
-     * 保存后主动刷新组件。系统在配置流程（添加/改选）结束后不会再调
-     * onUpdate，这一次刷新只能靠应用自己，必须刷成功。
-     *
-     * v4.1 的教训：只靠 Glance 的 update() 一条路，还用 runCatching 把异常静默
-     * 吞掉——真机上选了事件却不生效、界面一直停在旧事件，且没有任何日志痕迹。
-     * v4.2 改双触发互为兜底；v4.3 再加 updateAll。
-     * v4.5 寻址收口：此前三路里有两路（update 与广播）按**配置界面收到的 id**
-     * 寻址，而 v4.3 已实测该 id 与系统登记的放置 id 值域对不上、必然静默打空。
-     * 本版只留一条口径——按 AppWidgetManager 登记的实际放置 id 逐个
-     * Glance update()，配置界面的 id 只用于存配置、永不用于刷新寻址。
-     * 放置列表此刻为空（首次添加、系统还没登记完）时不硬刷：配置已同步
-     * 落盘，配置流程结束后的系统 onUpdate 与已排的延迟兜底都会按新配置出帧。
-     */
-    private suspend fun refreshHeroWidget() {
-        val appContext = applicationContext
+        val prefs = container.prefs
+        // 1) 落盘：生产保存路径 saveHeroSelection（内部 commit() 同步落盘）：
+        // 先把选择钉死，后面不管哪条刷新路径真正跑起来，provideGlance
+        // 读到的都是新选择。v4.5.1 起单实例时还同步写规范槽＋镜像到实际
+        // 放置 id，并修剪残留键——细节见 saveHeroSelection 的注释，这是
+        // 「改选只跟随一次」换存法的主体，不许绕过它直接写 per-id 键。
         val placedIds = placedHeroWidgetIds()
-        if (placedIds.isEmpty()) {
-            Log.i("HeroWidgetCfg", "保存后刷新：放置列表为空，留待 onUpdate/延迟兜底出帧")
-            return
+        HeroDaysWidget.saveHeroSelection(prefs, appWidgetId, eventId, placedIds)
+        Log.i(
+            "HeroWidgetCfg",
+            "保存选择 appWidgetId=$appWidgetId eventId=$eventId " +
+                "已放置实例=$placedIds 规范槽=${prefs.heroCanonicalSelection()} " +
+                "已存配置=${prefs.heroWidgetConfigs()}"
+        )
+        // 回执期望：记下保存时刻与「渲染应解析出的选择」（与底部结论行
+        // 同一口径：单实例时主键取放置 id），+7s 回执检查拿它比对
+        runCatching {
+            val renderPrimaryId = if (placedIds.size == 1) placedIds.single() else appWidgetId
+            val expected = HeroDaysWidget.resolveConfiguredEventId(prefs, renderPrimaryId, placedIds)
+            prefs.recordHeroRefreshExpectation(System.currentTimeMillis(), expected)
         }
-        placedIds.forEach { placedId ->
-            runCatching {
-                HeroDaysWidget().update(appContext, AppWidgetId(placedId))
-            }.onFailure {
-                Log.w("HeroWidgetCfg", "update() 刷新主视觉组件失败 placedId=$placedId", it)
-            }
+        // 2) 排兜底：回执检查闹钟（独立 requestCode，不与首次启用/更新共用）
+        HeroReceiptCheck.schedule(applicationContext)
+        // 3) 回 RESULT_OK 给启动器
+        setResult(
+            Activity.RESULT_OK,
+            Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        )
+        // 4) 刷新：单独协程，不依附 Activity 生命周期；广播（主）→
+        // Glance update()（并行尝试）→ updateAll（补充）
+        val appContext = applicationContext
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            HeroWidgetRefresher.sendUpdateBroadcast(appContext)
+            HeroWidgetRefresher.glanceUpdateEach(appContext, "即时update")
+            HeroWidgetRefresher.updateAllNow(appContext)
         }
+        finish()
     }
 
     /** 系统当前放置着的主视觉组件实例 id 列表（与配置界面收到的 id 对照取证用） */
@@ -222,9 +201,6 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 @Composable
 private fun HeroWidgetConfigureScreen(
     currentEventId: Long?,
-    conclusionEventId: Long?,
-    canonicalEventId: Long?,
-    placedCount: Int,
     loadEvents: suspend () -> List<EventEntity>,
     onPick: (Long?) -> Unit,
     onOpenApp: () -> Unit,
@@ -329,26 +305,6 @@ private fun HeroWidgetConfigureScreen(
                     }
                 }
             }
-            // v4.5.2 诊断结论行：结论由 Activity 用与渲染相同的解析函数＋
-            // 相同入参口径（放置 id 优先）算好后传进来，这里只负责展示。
-            // 结论与组件实际显示不一致 → 断点在刷新送达侧；一致但与所选
-            // 不同 → 断点在解析/存储侧。一张截图即可分清，全量证据见
-            // 关于页的「组件诊断」
-            val nameOf = { id: Long ->
-                list?.firstOrNull { it.first.id == id }?.first?.name ?: "事件#$id"
-            }
-            Text(
-                text = "组件将显示：" +
-                    (conclusionEventId?.let { nameOf(it) } ?: "自动（最近的日子）") +
-                    "（依据：规范槽＝" +
-                    (canonicalEventId?.let { nameOf(it) } ?: "空") +
-                    "，放置实例数＝$placedCount）",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-            )
         }
     }
 }
