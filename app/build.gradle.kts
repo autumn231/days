@@ -27,8 +27,8 @@ android {
         applicationId = "com.example.countdowndays"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "4.3"
+        versionCode = 37
+        versionName = "4.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -142,6 +142,9 @@ dependencies {
     implementation(libs.haze)
 
     implementation(libs.androidx.glance.appwidget)
+
+    // 主视觉组件首次添加竞态的延迟兜底重渲染（v4.4）：进程被杀也要能触发，走 WorkManager
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)

@@ -92,6 +92,22 @@ class PrefsManager(context: Context) {
 
     private fun heroWidgetKey(appWidgetId: Int) = "$HERO_KEY_PREFIX$appWidgetId"
 
+    // ---------- 主视觉组件实例「已见过」标记（v4.4 首次 onUpdate 延迟自检去重用） ----------
+
+    /** 这个主视觉组件实例是否已经走过首次 onUpdate（排过一次延迟自检重渲染） */
+    fun heroWidgetSeen(appWidgetId: Int): Boolean =
+        prefs.getBoolean(heroSeenKey(appWidgetId), false)
+
+    /** 标记/清除「已见过」；清除在组件被删时调用，与选事件配置一起清干净 */
+    fun setHeroWidgetSeen(appWidgetId: Int, seen: Boolean) {
+        prefs.edit(commit = true) {
+            if (seen) putBoolean(heroSeenKey(appWidgetId), true)
+            else remove(heroSeenKey(appWidgetId))
+        }
+    }
+
+    private fun heroSeenKey(appWidgetId: Int) = "$HERO_SEEN_PREFIX$appWidgetId"
+
     private fun loadCardStyle(): CardStyle =
         runCatching {
             CardStyle.valueOf(prefs.getString(KEY_CARD_STYLE, CardStyle.PAPER.name)!!)
@@ -109,6 +125,7 @@ class PrefsManager(context: Context) {
 
     companion object {
         private const val HERO_KEY_PREFIX = "hero_widget_event_"
+        private const val HERO_SEEN_PREFIX = "hero_widget_seen_"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC = "dynamic_color"
         private const val KEY_SORT = "sort_mode"

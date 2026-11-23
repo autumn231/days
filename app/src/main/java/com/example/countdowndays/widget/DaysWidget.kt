@@ -424,11 +424,54 @@ class HeroDaysWidget : GlanceAppWidget() {
 class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HeroDaysWidget()
 
-    /** 组件被删时清掉它那份选事件配置，别在偏好里留孤儿记录 */
+    /**
+     * 首个主视觉组件被放上桌面（v4.4）：排一次延迟自检重渲染。首次添加时
+     * 系统的初始渲染可能抢在配置流程之前跑完，几秒后按已落盘配置重出一帧
+     * 纠正（机制见 HeroDelayedRefresh）。此时还不知道具体实例 id，延迟任务
+     * 到点会按系统登记的放置列表全刷一遍。
+     */
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        Log.i("HeroWidgetRender", "delayed onEnabled 首次启用，排兜底重渲染")
+        HeroDelayedRefresh.schedule(
+            context, HeroDelayedRefresh.Source.FIRST_ENABLE, null
+        )
+    }
+
+    /**
+     * 每个实例的首次 onUpdate 也排一次延迟自检（v4.4）：用偏好里的「已见过」
+     * 标记保证只排一次，30 分钟的周期更新不会跟着重复排。延迟任务本身只走
+     * Glance update()、不经 onUpdate，不会自激循环。
+     */
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        val prefs = (context.applicationContext as CountdownApp).container.prefs
+        appWidgetIds.forEach { id ->
+            val seen = prefs.heroWidgetSeen(id)
+            if (HeroDelayedRefresh.shouldSchedule(
+                    HeroDelayedRefresh.Source.FIRST_UPDATE, seen
+                )
+            ) {
+                prefs.setHeroWidgetSeen(id, true)
+                HeroDelayedRefresh.schedule(
+                    context, HeroDelayedRefresh.Source.FIRST_UPDATE, id
+                )
+            }
+        }
+    }
+
+    /** 组件被删时清掉它那份选事件配置与「已见过」标记，别在偏好里留孤儿记录 */
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
         val prefs = (context.applicationContext as CountdownApp).container.prefs
-        appWidgetIds.forEach { prefs.setHeroWidgetEventId(it, null) }
+        appWidgetIds.forEach {
+            prefs.setHeroWidgetEventId(it, null)
+            prefs.setHeroWidgetSeen(it, false)
+        }
     }
 }
 

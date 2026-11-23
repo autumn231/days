@@ -138,6 +138,15 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
                     "已放置实例=${placedHeroWidgetIds()}"
             )
             refreshHeroWidget(appWidgetId)
+            // v4.4：再排一次延迟兜底重渲染——首次添加时系统的初始渲染可能抢在
+            // 配置落盘之前跑完、先按自动口径出一帧，几秒后按已落盘配置重出
+            // 一帧把它纠正过来（机制见 HeroDelayedRefresh，走 WorkManager，
+            // 本 Activity 进程被杀也照样触发）
+            HeroDelayedRefresh.schedule(
+                applicationContext,
+                HeroDelayedRefresh.Source.CONFIGURE_SAVE,
+                appWidgetId
+            )
             setResult(
                 Activity.RESULT_OK,
                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
