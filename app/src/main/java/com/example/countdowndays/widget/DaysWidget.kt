@@ -1,8 +1,10 @@
 package com.example.countdowndays.widget
 
 import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -179,22 +181,16 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
  * 长按组件（启动器支持时）可重新选。渲染时先用配置的事件；没配置过、或所选事件
  * 已被删除/归档（活跃列表里找不到）时回落到最近的未来事件（今天算未来侧），
  * 一个未来事件都没有时再走 pickHero（置顶优先、最近的过去事件）。
+ * v4.3：渲染读取抽成 resolveHeroForInstance 并全程打日志；另加单实例回落——
+ * 部分启动器给配置界面的 appWidgetId 与渲染侧解出的 id 对不上（v4.2 云真机实测
+ * 配置已存住、渲染却永远读不到），桌面上只有一个主视觉组件且偏好里只有一份
+ * 配置时直接认这份配置，见 pickConfiguredId。
  */
 class HeroDaysWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val app = context.applicationContext as CountdownApp
-        val appWidgetId = runCatching {
-            GlanceAppWidgetManager(context).getAppWidgetId(id)
-        }.getOrDefault(AppWidgetManager.INVALID_APPWIDGET_ID)
-        val configuredId = if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-            app.container.prefs.heroWidgetEventId(appWidgetId)
-        } else {
-            null
-        }
         val hero = runCatching {
-            val events = app.container.repository.getActiveEventsLight()
-            resolveHero(configuredId, events.map { it to it.occurrence() })
+            resolveHeroForInstance(context, id)
         }.getOrNull()
 
         val artwork = if (hero != null) {
@@ -339,6 +335,68 @@ class HeroDaysWidget : GlanceAppWidget() {
                     )
                 )
                 .firstOrNull()
+
+        /**
+         * 渲染侧的生产读取路径：provideGlance 本身就调这个函数，单测也调这个函数，
+         * 不许再出现「测试测的是另一条路径」。
+         *
+         * 步骤：从 GlanceId 解出 appWidgetId → 按它读选事件配置（主键）→ 取活跃
+         * 事件列表 → resolveHero 定下要显示的事件。全过程打一条日志（tag
+         * HeroWidgetRender），把渲染时实际看到的 id、配置全集、已放置实例和最终
+         * 选择都留痕——v4.1/v4.2 两版都是渲染侧静默读不到配置却无从取证。
+         *
+         * 主键读不到时走 pickConfiguredId 的单实例回落：实测三星/HyperOS 上出现过
+         * 「配置界面里选择保存成功（重开界面 ✓ 还在），渲染却永远走自动分支」，
+         * 即配置界面拿到的 appWidgetId 与渲染侧解出的 id 对不上。桌面上只有一个
+         * 主视觉组件、偏好里也只有一份配置时，这份配置必然属于这个组件，直接采用。
+         */
+        internal suspend fun resolveHeroForInstance(
+            context: Context,
+            glanceId: GlanceId
+        ): Pair<EventEntity, EventOccurrence>? {
+            val app = context.applicationContext as CountdownApp
+            val prefs = app.container.prefs
+            val appWidgetId = runCatching {
+                GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+            }.getOrDefault(AppWidgetManager.INVALID_APPWIDGET_ID)
+            val primary = if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                prefs.heroWidgetEventId(appWidgetId)
+            } else {
+                null
+            }
+            val configs = prefs.heroWidgetConfigs()
+            val placedIds = runCatching {
+                AppWidgetManager.getInstance(context).getAppWidgetIds(
+                    ComponentName(context, HeroDaysWidgetReceiver::class.java)
+                )
+            }.getOrDefault(IntArray(0))
+            val configuredId = pickConfiguredId(primary, configs, placedIds.size)
+            val events = app.container.repository.getActiveEventsLight()
+            val hero = resolveHero(configuredId, events.map { it to it.occurrence() })
+            Log.i(
+                "HeroWidgetRender",
+                "appWidgetId=$appWidgetId primary=$primary configs=$configs " +
+                    "placed=${placedIds.toList()} configuredId=$configuredId " +
+                    "heroId=${hero?.first?.id} heroName=${hero?.first?.name}"
+            )
+            return hero
+        }
+
+        /**
+         * 定这次渲染认哪份选事件配置（纯函数，可单测）：
+         * 主键命中 → 用主键；主键没命中但「偏好里只有一份配置 && 桌面上只有
+         * 一个主视觉组件实例」→ 这份配置必然属于这个实例，用它（回落，专治
+         * 配置界面与渲染侧 id 值域对不上的启动器）；其余情况 → null（走自动）。
+         */
+        internal fun pickConfiguredId(
+            primary: Long?,
+            configs: Map<Int, Long>,
+            placedCount: Int
+        ): Long? {
+            if (primary != null) return primary
+            if (configs.size == 1 && placedCount == 1) return configs.values.single()
+            return null
+        }
 
         /**
          * 主视觉最终选事件（纯函数，可单测）：

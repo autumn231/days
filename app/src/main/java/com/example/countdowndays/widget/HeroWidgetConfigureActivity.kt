@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.AppWidgetId
+import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.example.countdowndays.CountdownApp
@@ -92,6 +93,13 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 
         val container = (application as CountdownApp).container
         val prefs = container.prefs
+        // 取证日志：配置界面收到的 id、按这个 id 已存的选择、系统登记的放置实例，
+        // 三者对照就能看出启动器给的 id 与真实放置 id 是否一致（v4.3 加）
+        Log.i(
+            "HeroWidgetCfg",
+            "配置界面打开 appWidgetId=$appWidgetId 已存选择=${prefs.heroWidgetEventId(appWidgetId)} " +
+                "已放置实例=${placedHeroWidgetIds()}"
+        )
 
         setContent {
             val mode by prefs.themeMode.collectAsStateWithLifecycle()
@@ -124,6 +132,11 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
             // setHeroWidgetEventId 内部是 commit() 同步落盘：先把选择钉死，
             // 后面不管哪条刷新路径真正跑起来，provideGlance 读到的都是新选择
             container.prefs.setHeroWidgetEventId(appWidgetId, eventId)
+            Log.i(
+                "HeroWidgetCfg",
+                "保存选择 appWidgetId=$appWidgetId eventId=$eventId " +
+                    "已放置实例=${placedHeroWidgetIds()}"
+            )
             refreshHeroWidget(appWidgetId)
             setResult(
                 Activity.RESULT_OK,
@@ -144,7 +157,10 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
      *    不绑正在 finish 的 Activity）；
      * 2) 给 Receiver 发一条系统同款的 ACTION_APPWIDGET_UPDATE 广播，走系统
      *    更新组件的原路（Receiver → Glance 会话），与 1) 互不依赖。
-     * 两条都失败时还有每 30 分钟的周期更新兜底——配置已同步落盘，迟早会生效。
+     * v4.3 再加一路：
+     * 3) updateAll：按系统登记的真实放置 id 逐个重渲染，绕开「配置界面的 id
+     *    与放置 id 对不上」时前两路刷空的可能。
+     * 全都失败时还有每 30 分钟的周期更新兜底——配置已同步落盘，迟早会生效。
      */
     private suspend fun refreshHeroWidget(appWidgetId: Int) {
         val appContext = applicationContext
@@ -162,7 +178,22 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
         }.onFailure {
             Log.w("HeroWidgetCfg", "广播刷新主视觉组件失败 id=$appWidgetId", it)
         }
+        // 3) updateAll（v4.3 加）：不按配置界面收到的 id、而是按系统登记的真实
+        //    放置 id 逐个重渲染——若启动器给配置界面的 id 与放置 id 对不上，
+        //    前两路都会刷空，这一路照样能命中桌面上那个实例
+        runCatching {
+            HeroDaysWidget().updateAll(appContext)
+        }.onFailure {
+            Log.w("HeroWidgetCfg", "updateAll 刷新主视觉组件失败 id=$appWidgetId", it)
+        }
     }
+
+    /** 系统当前放置着的主视觉组件实例 id 列表（与配置界面收到的 id 对照取证用） */
+    private fun placedHeroWidgetIds(): List<Int> = runCatching {
+        AppWidgetManager.getInstance(this)
+            .getAppWidgetIds(ComponentName(this, HeroDaysWidgetReceiver::class.java))
+            .toList()
+    }.getOrDefault(emptyList())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

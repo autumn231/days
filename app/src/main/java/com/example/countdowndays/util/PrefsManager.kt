@@ -82,7 +82,15 @@ class PrefsManager(context: Context) {
         }
     }
 
-    private fun heroWidgetKey(appWidgetId: Int) = "hero_widget_event_$appWidgetId"
+    /** 当前存着的全部主视觉选事件配置：appWidgetId → eventId（只含有效值） */
+    fun heroWidgetConfigs(): Map<Int, Long> =
+        prefs.all.entries.mapNotNull { (key, value) ->
+            val id = key.removePrefix(HERO_KEY_PREFIX).toIntOrNull() ?: return@mapNotNull null
+            val eventId = value as? Long ?: return@mapNotNull null
+            if (eventId > 0L) id to eventId else null
+        }.toMap()
+
+    private fun heroWidgetKey(appWidgetId: Int) = "$HERO_KEY_PREFIX$appWidgetId"
 
     private fun loadCardStyle(): CardStyle =
         runCatching {
@@ -100,6 +108,7 @@ class PrefsManager(context: Context) {
         }.getOrDefault(SortMode.DATE)
 
     companion object {
+        private const val HERO_KEY_PREFIX = "hero_widget_event_"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC = "dynamic_color"
         private const val KEY_SORT = "sort_mode"
