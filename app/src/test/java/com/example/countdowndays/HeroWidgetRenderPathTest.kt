@@ -103,26 +103,47 @@ class HeroWidgetRenderPathTest {
         assertEquals(idA, hero?.first?.id)
     }
 
-    // ---- pickConfiguredId：回落的判定逻辑（生产函数的一部分，v4.5 口径） ----
+    // ---- pickConfiguredId：回落的判定逻辑（生产函数的一部分） ----
+    // v4.5.1 起签名带 canonical 与 placedCount：规范槽规则见
+    // HeroWidgetCanonicalSlotTest.pickConfiguredId_canonicalRules；这里钉
+    // 的是主键优先与「恰好一份配置」兼容回落（规范槽为空时）。
 
     @Test
     fun pickConfiguredId_primaryHitWins() {
-        assertEquals(42L, HeroDaysWidget.pickConfiguredId(42L, mapOf(7 to 43L)))
+        assertEquals(
+            42L,
+            HeroDaysWidget.pickConfiguredId(42L, mapOf(7 to 43L), null, 1)
+        )
+        // 主键命中也优先于规范槽
+        assertEquals(
+            42L,
+            HeroDaysWidget.pickConfiguredId(42L, mapOf(7 to 43L), 44L, 1)
+        )
     }
 
     @Test
     fun pickConfiguredId_singleConfig_usesItRegardlessOfPlacedCount() {
         // 配置界面的 id 与渲染侧 id 对不上时的兜底：全局只有一份配置就必属
         // 桌面上的主视觉组件，直接认——v4.5 起不再附带实例数条件（v4.4 的
-        // placedCount==1 在首次添加窗口期不成立，是回落哑火的真因）
-        assertEquals(42L, HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L)))
+        // placedCount==1 在首次添加窗口期不成立，是回落哑火的真因）；
+        // v4.5.1 保留为规范槽为空时的兼容回落（升级前存下的单份选择）
+        assertEquals(
+            42L,
+            HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L), null, 0)
+        )
+        assertEquals(
+            42L,
+            HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L), null, 2)
+        )
     }
 
     @Test
     fun pickConfiguredId_ambiguousCases_stayAuto() {
-        // 多份配置在场：渲染的这个实例主键没命中，归属有歧义，不猜
-        assertNull(HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L, 8 to 43L)))
+        // 多份配置在场且规范槽为空：渲染的这个实例主键没命中，归属有歧义，不猜
+        assertNull(
+            HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L, 8 to 43L), null, 1)
+        )
         // 没有任何配置
-        assertNull(HeroDaysWidget.pickConfiguredId(null, emptyMap()))
+        assertNull(HeroDaysWidget.pickConfiguredId(null, emptyMap(), null, 1))
     }
 }

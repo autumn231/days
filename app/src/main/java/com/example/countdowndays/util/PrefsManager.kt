@@ -92,6 +92,61 @@ class PrefsManager(context: Context) {
 
     private fun heroWidgetKey(appWidgetId: Int) = "$HERO_KEY_PREFIX$appWidgetId"
 
+    // ---------- 规范槽：单实例时的权威选择（v4.5.1） ----------
+    //
+    // 按 appWidgetId 分键存选择这条路在部分启动器（三星 One UI / HyperOS）上
+    // 结构性不可靠：配置界面拿到的 id 与渲染侧 id 对不上、改选时给的 id 还会
+    // 漂移，键越攒越多（删组件的 onDeleted 清的是渲染侧 id 的键，清不掉配置
+    // 侧写下的键），而渲染侧的回落认领又要求「全局恰好一份配置」，第二份键
+    // 一出现就永久哑火——真机表现为「改选只跟随一次、删旧重加也不行」。
+    // 规范槽是与 id 无关的单一槽：桌面上只有一个主视觉组件时，每次保存都
+    // 覆盖写这里，永远只有最新一份；渲染与配置界面的 ✓ 都读它（见
+    // HeroDaysWidget.resolveConfiguredEventId），两边永不矛盾。
+
+    /** 规范槽里存的选择（事件 id）；没写过或已清返回 null */
+    fun heroCanonicalSelection(): Long? {
+        val stored = prefs.getLong(KEY_HERO_CANONICAL_EVENT, -1L)
+        return stored.takeIf { it > 0L }
+    }
+
+    /** 规范槽最近一次写入时间（毫秒）；没写过返回 null，只用于日志取证 */
+    fun heroCanonicalSelectionAt(): Long? {
+        val stored = prefs.getLong(KEY_HERO_CANONICAL_AT, -1L)
+        return stored.takeIf { it > 0L }
+    }
+
+    /**
+     * 覆盖写规范槽；eventId 传 null 表示清掉（用户选了「自动」或组件全删）。
+     * 同样用 commit() 同步落盘，理由同 setHeroWidgetEventId。
+     */
+    fun setHeroCanonicalSelection(eventId: Long?) {
+        prefs.edit(commit = true) {
+            if (eventId == null) {
+                remove(KEY_HERO_CANONICAL_EVENT)
+                remove(KEY_HERO_CANONICAL_AT)
+            } else {
+                putLong(KEY_HERO_CANONICAL_EVENT, eventId)
+                putLong(KEY_HERO_CANONICAL_AT, System.currentTimeMillis())
+            }
+        }
+    }
+
+    /**
+     * 修剪残留的按 id 配置键：不在 [keepIds] 里的 hero_widget_event_* 键全删，
+     * 返回删掉的 id 集合。保存选择后由 HeroDaysWidget.saveHeroSelection 调用，
+     * keepIds = 系统登记的实际放置 id ＋本次保存用的 id（防放置列表在首次
+     * 添加窗口期短暂滞后、把刚写下的键误删）。commit() 同步落盘。
+     */
+    fun pruneHeroWidgetConfigs(keepIds: Set<Int>): Set<Int> {
+        val removed = heroWidgetConfigs().keys - keepIds
+        if (removed.isNotEmpty()) {
+            prefs.edit(commit = true) {
+                removed.forEach { remove(heroWidgetKey(it)) }
+            }
+        }
+        return removed
+    }
+
     private fun loadCardStyle(): CardStyle =
         runCatching {
             CardStyle.valueOf(prefs.getString(KEY_CARD_STYLE, CardStyle.PAPER.name)!!)
@@ -109,6 +164,8 @@ class PrefsManager(context: Context) {
 
     companion object {
         private const val HERO_KEY_PREFIX = "hero_widget_event_"
+        private const val KEY_HERO_CANONICAL_EVENT = "hero_widget_canonical_event"
+        private const val KEY_HERO_CANONICAL_AT = "hero_widget_canonical_at"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC = "dynamic_color"
         private const val KEY_SORT = "sort_mode"

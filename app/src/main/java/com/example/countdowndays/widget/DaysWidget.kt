@@ -51,6 +51,7 @@ import com.example.countdowndays.data.occurrence
 import com.example.countdowndays.ui.theme.eventColor
 import com.example.countdowndays.util.Anniversary
 import com.example.countdowndays.util.DateUtils
+import com.example.countdowndays.util.PrefsManager
 import com.example.countdowndays.util.SmartCrop
 import java.io.File
 import kotlin.math.abs
@@ -189,6 +190,14 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
  * 添加时不成立（系统登记的放置实例数口径不受应用控制，窗口期可能为 0 或多于
  * 1），回落整体哑火、错帧一直挂到周期更新。渲染必须自洽：本实例主键读不到
  * 配置时，只要全局恰好存着一份配置就认它，不限首次、不限实例数。
+ * v4.5.1：用户真机实证 v4.5 仍不行——改选只跟随过一次、之后再也不跟随，删旧
+ * 重加全新组件也一样。根因是按 appWidgetId 分键存配置这条路本身：改选时配置
+ * 界面拿到的 id 会漂移、键越攒越多（onDeleted 清的是渲染侧 id 的键，清不掉
+ * 配置侧写下的），「恰好一份配置」在真实设备状态下基本永远不成立。本版换存
+ * 法：单实例时保存走 saveHeroSelection——选择覆盖写进与 id 无关的规范槽、并
+ * 镜像写到实际放置 id 名下，保存后修剪不在放置列表里的残留键；解析统一走
+ * resolveConfiguredEventId，配置界面的 ✓ 与渲染同源、永不互相矛盾。多实例
+ * 维持各自键优先的现状语义，规范槽只在单实例时生效。
  */
 class HeroDaysWidget : GlanceAppWidget() {
 
@@ -351,10 +360,10 @@ class HeroDaysWidget : GlanceAppWidget() {
          *
          * 主键读不到时走 pickConfiguredId 的回落：实测三星/HyperOS 上出现过
          * 「配置界面里选择保存成功（重开界面 ✓ 还在），渲染却永远走自动分支」，
-         * 即配置界面拿到的 appWidgetId 与渲染侧解出的 id 对不上。偏好里全局恰好
-         * 只有一份配置时，它必然是为桌面上的主视觉组件存的（多份并存才真有
-         * 归属歧义），直接采用——不看放置实例数：那个数在首次添加窗口期口径
-         * 不稳，v4.4 正是被它卡死（见类头注释）。
+         * 即配置界面拿到的 appWidgetId 与渲染侧解出的 id 对不上。v4.5 的回落
+         * 是「全局恰好一份配置就认领」，真机上键越攒越多、这条件基本永远不
+         * 成立（见类头 v4.5.1 注释）；v4.5.1 起单实例改走规范槽（见
+         * resolveConfiguredEventId），「恰好一份」只作旧状态的兼容回落保留。
          */
         internal suspend fun resolveHeroForInstance(
             context: Context,
@@ -376,12 +385,13 @@ class HeroDaysWidget : GlanceAppWidget() {
                     ComponentName(context, HeroDaysWidgetReceiver::class.java)
                 )
             }.getOrDefault(IntArray(0))
-            val configuredId = pickConfiguredId(primary, configs)
+            val configuredId = resolveConfiguredEventId(prefs, appWidgetId, placedIds.toList())
             val events = app.container.repository.getActiveEventsLight()
             val hero = resolveHero(configuredId, events.map { it to it.occurrence() })
             Log.i(
                 "HeroWidgetRender",
                 "appWidgetId=$appWidgetId primary=$primary configs=$configs " +
+                    "canonical=${prefs.heroCanonicalSelection()} " +
                     "placed=${placedIds.toList()} configuredId=$configuredId " +
                     "heroId=${hero?.first?.id} heroName=${hero?.first?.name}"
             )
@@ -389,18 +399,79 @@ class HeroDaysWidget : GlanceAppWidget() {
         }
 
         /**
-         * 定这次渲染认哪份选事件配置（纯函数，可单测）：
-         * 主键命中 → 用主键；主键没命中但偏好里全局恰好只有一份配置 → 用它
-         * （回落，专治配置界面与渲染侧 id 值域对不上的启动器；一份配置不存在
-         * 归属歧义，所以不再附带任何实例数条件——v4.4 的 placedCount==1 条件
-         * 在首次添加窗口期不成立、是回落哑火的真因）；多份配置并存或一份都
-         * 没有 → null（走自动，不猜归属）。
+         * 保存主视觉选择（生产保存路径，配置界面 confirmSelection 调它）：
+         * 1) 照旧按配置界面给的 id 写一份 per-id 键（id 对得上的启动器走主键）；
+         * 2) 实际放置实例恰好 1 个时：把同一选择镜像写到那个放置 id 名下
+         *    （渲染主键直达，删组件时 onDeleted 也终于能清对键），并覆盖写
+         *    规范槽——规范槽与 id 无关、永远只有最新一份，不存在攒键卡死；
+         * 3) 放置列表非空时修剪残留键：只保留放置 id 与本次保存 id 名下的键，
+         *    其余（已删组件的孤儿键、历次改选漂移出去的键）全删。放置列表为
+         *    空（首次添加窗口期口径未定）时不修剪、不写规范槽，退回旧行为，
+         *    等下一次保存/解析时还有单份配置回落兜底。
+         * eventId 传 null（用户选了「自动」）时同样镜像清除＋清规范槽。
+         */
+        internal fun saveHeroSelection(
+            prefs: PrefsManager,
+            appWidgetId: Int,
+            eventId: Long?,
+            placedIds: List<Int>
+        ) {
+            prefs.setHeroWidgetEventId(appWidgetId, eventId)
+            if (placedIds.size == 1) {
+                val placedId = placedIds.single()
+                if (placedId != appWidgetId) {
+                    prefs.setHeroWidgetEventId(placedId, eventId)
+                }
+                prefs.setHeroCanonicalSelection(eventId)
+            }
+            if (placedIds.isNotEmpty()) {
+                prefs.pruneHeroWidgetConfigs(placedIds.toSet() + appWidgetId)
+            }
+        }
+
+        /**
+         * 「当前生效的选择」的唯一解析入口：渲染（resolveHeroForInstance）与
+         * 配置界面的 ✓ 判定都调它，两边同源、永不互相矛盾（v4.5 及以前配置
+         * 页只读自己 id 的键、渲染走另一套回落，截图实证出现过 ✓ 在 A 事件、
+         * 组件却显示 B 事件）。primaryAppWidgetId 是调用方自己的 id（渲染侧
+         * 或配置侧），placedIds 是系统登记的实际放置实例列表。
+         */
+        internal fun resolveConfiguredEventId(
+            prefs: PrefsManager,
+            primaryAppWidgetId: Int,
+            placedIds: List<Int>
+        ): Long? {
+            val primary = if (primaryAppWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                prefs.heroWidgetEventId(primaryAppWidgetId)
+            } else {
+                null
+            }
+            return pickConfiguredId(
+                primary = primary,
+                configs = prefs.heroWidgetConfigs(),
+                canonical = prefs.heroCanonicalSelection(),
+                placedCount = placedIds.size
+            )
+        }
+
+        /**
+         * 定这次解析认哪份选事件配置（纯函数，可单测）：
+         * 1) 本实例主键命中 → 用主键（多实例各自键优先的现状语义）；
+         * 2) 放置实例恰好 1 个且规范槽有值 → 用规范槽（v4.5.1 主路径：规范
+         *    槽与 id 无关、每次保存覆盖写，多少份残留键在场都不受影响）；
+         * 3) 全局恰好只有一份 per-id 配置 → 用它（v4.5 兼容回落，覆盖升级
+         *    前存下的单份选择与放置列表口径未定的窗口期）；
+         * 4) 其余 → null（走自动，不猜归属）。
+         * 规范槽只在单实例时读：多实例时它无法代表某个具体实例，不猜。
          */
         internal fun pickConfiguredId(
             primary: Long?,
-            configs: Map<Int, Long>
+            configs: Map<Int, Long>,
+            canonical: Long?,
+            placedCount: Int
         ): Long? {
             if (primary != null) return primary
+            if (placedCount == 1 && canonical != null) return canonical
             if (configs.size == 1) return configs.values.single()
             return null
         }
@@ -439,6 +510,15 @@ class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
      */
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
+        // v4.5.1：新一代第一台组件不继承上一代的规范槽选择——上一代删组件
+        // 时 onDeleted 在部分启动器上送达不可靠，规范槽可能残留旧选择，新
+        // 组件在用户配置前会先读到它。清掉规范槽；本实例的选择随后由配置
+        // 流程写回，已有实例的 per-id 主键不受此影响（onEnabled 只在从无到
+        // 有第一台时触发）。
+        runCatching {
+            (context.applicationContext as CountdownApp).container.prefs
+                .setHeroCanonicalSelection(null)
+        }
         Log.i("HeroWidgetRender", "delayed onEnabled 首次启用，排兜底重渲染")
         HeroDelayedRefresh.schedule(context, HeroDelayedRefresh.Source.FIRST_ENABLE)
     }
@@ -466,6 +546,16 @@ class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
         val prefs = (context.applicationContext as CountdownApp).container.prefs
         appWidgetIds.forEach {
             prefs.setHeroWidgetEventId(it, null)
+        }
+        // v4.5.1：主视觉组件全删光了，规范槽一并清掉，别让下一代新组件
+        // 继承旧选择（onEnabled 那边还有一道同样的清理，双保险）
+        runCatching {
+            val remaining = AppWidgetManager.getInstance(context).getAppWidgetIds(
+                ComponentName(context, HeroDaysWidgetReceiver::class.java)
+            ).toList() - appWidgetIds.toSet()
+            if (remaining.isEmpty()) {
+                prefs.setHeroCanonicalSelection(null)
+            }
         }
     }
 }

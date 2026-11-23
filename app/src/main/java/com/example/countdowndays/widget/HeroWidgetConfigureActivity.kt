@@ -92,12 +92,19 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 
         val container = (application as CountdownApp).container
         val prefs = container.prefs
-        // 取证日志：配置界面收到的 id、按这个 id 已存的选择、系统登记的放置实例，
-        // 三者对照就能看出启动器给的 id 与真实放置 id 是否一致（v4.3 加）
+        val placedIds = placedHeroWidgetIds()
+        // ✓ 判定与渲染同源（v4.5.1）：走 HeroDaysWidget.resolveConfiguredEventId
+        // 同一解析入口，不再只读本界面 id 名下的键——旧口径下出现过「✓ 在 A
+        // 事件、组件却显示 B 事件」的自相矛盾（用户真机截图实证）。
+        val currentSelection =
+            HeroDaysWidget.resolveConfiguredEventId(prefs, appWidgetId, placedIds)
+        // 取证日志：配置界面收到的 id、解析出的当前选择、规范槽、全部已存
+        // 配置与系统登记的放置实例，全量对照（v4.3 起）
         Log.i(
             "HeroWidgetCfg",
-            "配置界面打开 appWidgetId=$appWidgetId 已存选择=${prefs.heroWidgetEventId(appWidgetId)} " +
-                "已放置实例=${placedHeroWidgetIds()}"
+            "配置界面打开 appWidgetId=$appWidgetId 解析选择=$currentSelection " +
+                "规范槽=${prefs.heroCanonicalSelection()} 已存配置=${prefs.heroWidgetConfigs()} " +
+                "已放置实例=$placedIds"
         )
 
         setContent {
@@ -111,7 +118,7 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
             }
             CountdownTheme(darkTheme = darkTheme, dynamicColor = dynamic) {
                 HeroWidgetConfigureScreen(
-                    currentEventId = prefs.heroWidgetEventId(appWidgetId),
+                    currentEventId = currentSelection,
                     loadEvents = { container.repository.getActiveEventsLight() },
                     onPick = { eventId -> confirmSelection(appWidgetId, eventId) },
                     onOpenApp = {
@@ -128,13 +135,18 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
     private fun confirmSelection(appWidgetId: Int, eventId: Long?) {
         val container = (application as CountdownApp).container
         lifecycleScope.launch {
-            // setHeroWidgetEventId 内部是 commit() 同步落盘：先把选择钉死，
-            // 后面不管哪条刷新路径真正跑起来，provideGlance 读到的都是新选择
-            container.prefs.setHeroWidgetEventId(appWidgetId, eventId)
+            // 保存走生产保存路径 saveHeroSelection（内部 commit() 同步落盘）：
+            // 先把选择钉死，后面不管哪条刷新路径真正跑起来，provideGlance
+            // 读到的都是新选择。v4.5.1 起单实例时还同步写规范槽＋镜像到实际
+            // 放置 id，并修剪残留键——细节见 saveHeroSelection 的注释，这是
+            // 「改选只跟随一次」换存法的主体，不许绕过它直接写 per-id 键。
+            val placedIds = placedHeroWidgetIds()
+            HeroDaysWidget.saveHeroSelection(container.prefs, appWidgetId, eventId, placedIds)
             Log.i(
                 "HeroWidgetCfg",
                 "保存选择 appWidgetId=$appWidgetId eventId=$eventId " +
-                    "已放置实例=${placedHeroWidgetIds()}"
+                    "已放置实例=$placedIds 规范槽=${container.prefs.heroCanonicalSelection()} " +
+                    "已存配置=${container.prefs.heroWidgetConfigs()}"
             )
             refreshHeroWidget()
             // 再排一次延迟兜底重渲染——首次添加时系统的初始渲染可能抢在配置
