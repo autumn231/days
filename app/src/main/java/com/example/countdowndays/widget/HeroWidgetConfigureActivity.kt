@@ -52,7 +52,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.AppWidgetId
-import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.example.countdowndays.CountdownApp
@@ -137,15 +136,14 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
                 "保存选择 appWidgetId=$appWidgetId eventId=$eventId " +
                     "已放置实例=${placedHeroWidgetIds()}"
             )
-            refreshHeroWidget(appWidgetId)
-            // v4.4：再排一次延迟兜底重渲染——首次添加时系统的初始渲染可能抢在
-            // 配置落盘之前跑完、先按自动口径出一帧，几秒后按已落盘配置重出
-            // 一帧把它纠正过来（机制见 HeroDelayedRefresh，走 WorkManager，
-            // 本 Activity 进程被杀也照样触发）
+            refreshHeroWidget()
+            // 再排一次延迟兜底重渲染——首次添加时系统的初始渲染可能抢在配置
+            // 落盘之前跑完、先按自动口径出一帧，几秒后按已落盘配置重出一帧
+            // 把它纠正过来（机制见 HeroDelayedRefresh，v4.5 起走 AlarmManager
+            // 精确闹钟，本 Activity 进程被杀也照样触发）
             HeroDelayedRefresh.schedule(
                 applicationContext,
-                HeroDelayedRefresh.Source.CONFIGURE_SAVE,
-                appWidgetId
+                HeroDelayedRefresh.Source.CONFIGURE_SAVE
             )
             setResult(
                 Activity.RESULT_OK,
@@ -156,44 +154,32 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
     }
 
     /**
-     * 保存后主动刷新该组件实例。系统在配置流程（添加/改选）结束后不会再调
+     * 保存后主动刷新组件。系统在配置流程（添加/改选）结束后不会再调
      * onUpdate，这一次刷新只能靠应用自己，必须刷成功。
      *
      * v4.1 的教训：只靠 Glance 的 update() 一条路，还用 runCatching 把异常静默
      * 吞掉——真机上选了事件却不生效、界面一直停在旧事件，且没有任何日志痕迹。
-     * v4.2 改双触发互为兜底，失败只记日志不再静默：
-     * 1) Glance update()：直接驱动该实例的会话重渲染（用 applicationContext，
-     *    不绑正在 finish 的 Activity）；
-     * 2) 给 Receiver 发一条系统同款的 ACTION_APPWIDGET_UPDATE 广播，走系统
-     *    更新组件的原路（Receiver → Glance 会话），与 1) 互不依赖。
-     * v4.3 再加一路：
-     * 3) updateAll：按系统登记的真实放置 id 逐个重渲染，绕开「配置界面的 id
-     *    与放置 id 对不上」时前两路刷空的可能。
-     * 全都失败时还有每 30 分钟的周期更新兜底——配置已同步落盘，迟早会生效。
+     * v4.2 改双触发互为兜底；v4.3 再加 updateAll。
+     * v4.5 寻址收口：此前三路里有两路（update 与广播）按**配置界面收到的 id**
+     * 寻址，而 v4.3 已实测该 id 与系统登记的放置 id 值域对不上、必然静默打空。
+     * 本版只留一条口径——按 AppWidgetManager 登记的实际放置 id 逐个
+     * Glance update()，配置界面的 id 只用于存配置、永不用于刷新寻址。
+     * 放置列表此刻为空（首次添加、系统还没登记完）时不硬刷：配置已同步
+     * 落盘，配置流程结束后的系统 onUpdate 与已排的延迟兜底都会按新配置出帧。
      */
-    private suspend fun refreshHeroWidget(appWidgetId: Int) {
+    private suspend fun refreshHeroWidget() {
         val appContext = applicationContext
-        runCatching {
-            HeroDaysWidget().update(appContext, AppWidgetId(appWidgetId))
-        }.onFailure {
-            Log.w("HeroWidgetCfg", "update() 刷新主视觉组件失败 id=$appWidgetId", it)
+        val placedIds = placedHeroWidgetIds()
+        if (placedIds.isEmpty()) {
+            Log.i("HeroWidgetCfg", "保存后刷新：放置列表为空，留待 onUpdate/延迟兜底出帧")
+            return
         }
-        runCatching {
-            val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
-                component = ComponentName(appContext, HeroDaysWidgetReceiver::class.java)
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
+        placedIds.forEach { placedId ->
+            runCatching {
+                HeroDaysWidget().update(appContext, AppWidgetId(placedId))
+            }.onFailure {
+                Log.w("HeroWidgetCfg", "update() 刷新主视觉组件失败 placedId=$placedId", it)
             }
-            appContext.sendBroadcast(intent)
-        }.onFailure {
-            Log.w("HeroWidgetCfg", "广播刷新主视觉组件失败 id=$appWidgetId", it)
-        }
-        // 3) updateAll（v4.3 加）：不按配置界面收到的 id、而是按系统登记的真实
-        //    放置 id 逐个重渲染——若启动器给配置界面的 id 与放置 id 对不上，
-        //    前两路都会刷空，这一路照样能命中桌面上那个实例
-        runCatching {
-            HeroDaysWidget().updateAll(appContext)
-        }.onFailure {
-            Log.w("HeroWidgetCfg", "updateAll 刷新主视觉组件失败 id=$appWidgetId", it)
         }
     }
 

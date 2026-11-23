@@ -185,6 +185,10 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
  * 部分启动器给配置界面的 appWidgetId 与渲染侧解出的 id 对不上（v4.2 云真机实测
  * 配置已存住、渲染却永远读不到），桌面上只有一个主视觉组件且偏好里只有一份
  * 配置时直接认这份配置，见 pickConfiguredId。
+ * v4.5：回落去掉「桌面上只有一个实例」这个条件——v4.4 云真机实测它在真·首次
+ * 添加时不成立（系统登记的放置实例数口径不受应用控制，窗口期可能为 0 或多于
+ * 1），回落整体哑火、错帧一直挂到周期更新。渲染必须自洽：本实例主键读不到
+ * 配置时，只要全局恰好存着一份配置就认它，不限首次、不限实例数。
  */
 class HeroDaysWidget : GlanceAppWidget() {
 
@@ -345,10 +349,12 @@ class HeroDaysWidget : GlanceAppWidget() {
          * HeroWidgetRender），把渲染时实际看到的 id、配置全集、已放置实例和最终
          * 选择都留痕——v4.1/v4.2 两版都是渲染侧静默读不到配置却无从取证。
          *
-         * 主键读不到时走 pickConfiguredId 的单实例回落：实测三星/HyperOS 上出现过
+         * 主键读不到时走 pickConfiguredId 的回落：实测三星/HyperOS 上出现过
          * 「配置界面里选择保存成功（重开界面 ✓ 还在），渲染却永远走自动分支」，
-         * 即配置界面拿到的 appWidgetId 与渲染侧解出的 id 对不上。桌面上只有一个
-         * 主视觉组件、偏好里也只有一份配置时，这份配置必然属于这个组件，直接采用。
+         * 即配置界面拿到的 appWidgetId 与渲染侧解出的 id 对不上。偏好里全局恰好
+         * 只有一份配置时，它必然是为桌面上的主视觉组件存的（多份并存才真有
+         * 归属歧义），直接采用——不看放置实例数：那个数在首次添加窗口期口径
+         * 不稳，v4.4 正是被它卡死（见类头注释）。
          */
         internal suspend fun resolveHeroForInstance(
             context: Context,
@@ -370,7 +376,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                     ComponentName(context, HeroDaysWidgetReceiver::class.java)
                 )
             }.getOrDefault(IntArray(0))
-            val configuredId = pickConfiguredId(primary, configs, placedIds.size)
+            val configuredId = pickConfiguredId(primary, configs)
             val events = app.container.repository.getActiveEventsLight()
             val hero = resolveHero(configuredId, events.map { it to it.occurrence() })
             Log.i(
@@ -384,17 +390,18 @@ class HeroDaysWidget : GlanceAppWidget() {
 
         /**
          * 定这次渲染认哪份选事件配置（纯函数，可单测）：
-         * 主键命中 → 用主键；主键没命中但「偏好里只有一份配置 && 桌面上只有
-         * 一个主视觉组件实例」→ 这份配置必然属于这个实例，用它（回落，专治
-         * 配置界面与渲染侧 id 值域对不上的启动器）；其余情况 → null（走自动）。
+         * 主键命中 → 用主键；主键没命中但偏好里全局恰好只有一份配置 → 用它
+         * （回落，专治配置界面与渲染侧 id 值域对不上的启动器；一份配置不存在
+         * 归属歧义，所以不再附带任何实例数条件——v4.4 的 placedCount==1 条件
+         * 在首次添加窗口期不成立、是回落哑火的真因）；多份配置并存或一份都
+         * 没有 → null（走自动，不猜归属）。
          */
         internal fun pickConfiguredId(
             primary: Long?,
-            configs: Map<Int, Long>,
-            placedCount: Int
+            configs: Map<Int, Long>
         ): Long? {
             if (primary != null) return primary
-            if (configs.size == 1 && placedCount == 1) return configs.values.single()
+            if (configs.size == 1) return configs.values.single()
             return null
         }
 
@@ -425,23 +432,24 @@ class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HeroDaysWidget()
 
     /**
-     * 首个主视觉组件被放上桌面（v4.4）：排一次延迟自检重渲染。首次添加时
-     * 系统的初始渲染可能抢在配置流程之前跑完，几秒后按已落盘配置重出一帧
-     * 纠正（机制见 HeroDelayedRefresh）。此时还不知道具体实例 id，延迟任务
-     * 到点会按系统登记的放置列表全刷一遍。
+     * 首个主视觉组件被放上桌面：排一次延迟自检重渲染。首次添加时系统的
+     * 初始渲染可能抢在配置流程之前跑完，几秒后按已落盘配置重出一帧纠正
+     * （机制见 HeroDelayedRefresh，v4.5 起走 AlarmManager）。延迟重渲染
+     * 到点按系统登记的实际放置 id 全刷一遍。
      */
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         Log.i("HeroWidgetRender", "delayed onEnabled 首次启用，排兜底重渲染")
-        HeroDelayedRefresh.schedule(
-            context, HeroDelayedRefresh.Source.FIRST_ENABLE, null
-        )
+        HeroDelayedRefresh.schedule(context, HeroDelayedRefresh.Source.FIRST_ENABLE)
     }
 
     /**
-     * 每个实例的首次 onUpdate 也排一次延迟自检（v4.4）：用偏好里的「已见过」
-     * 标记保证只排一次，30 分钟的周期更新不会跟着重复排。延迟任务本身只走
-     * Glance update()、不经 onUpdate，不会自激循环。
+     * 每次 onUpdate 都顺手排一次延迟自检（v4.5）：渲染决策本身已自洽，这次
+     * onUpdate 出的帧就该是对的；延迟重渲染只是防「本次更新发生在配置落盘
+     * 之前」的最后一道保险。闹钟全应用共用一个，后排顶掉先排、天然去重，
+     * 不再需要 v4.4 的「已见过」标记（它有个隐患：先置标记再排程，排程失败
+     * 一次该实例就永久不再排）。延迟重渲染只走 Glance update()、不经
+     * onUpdate，不会自激循环。
      */
     override fun onUpdate(
         context: Context,
@@ -449,28 +457,15 @@ class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
         appWidgetIds: IntArray
     ) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        val prefs = (context.applicationContext as CountdownApp).container.prefs
-        appWidgetIds.forEach { id ->
-            val seen = prefs.heroWidgetSeen(id)
-            if (HeroDelayedRefresh.shouldSchedule(
-                    HeroDelayedRefresh.Source.FIRST_UPDATE, seen
-                )
-            ) {
-                prefs.setHeroWidgetSeen(id, true)
-                HeroDelayedRefresh.schedule(
-                    context, HeroDelayedRefresh.Source.FIRST_UPDATE, id
-                )
-            }
-        }
+        HeroDelayedRefresh.schedule(context, HeroDelayedRefresh.Source.FIRST_UPDATE)
     }
 
-    /** 组件被删时清掉它那份选事件配置与「已见过」标记，别在偏好里留孤儿记录 */
+    /** 组件被删时清掉它那份选事件配置，别在偏好里留孤儿记录 */
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)
         val prefs = (context.applicationContext as CountdownApp).container.prefs
         appWidgetIds.forEach {
             prefs.setHeroWidgetEventId(it, null)
-            prefs.setHeroWidgetSeen(it, false)
         }
     }
 }

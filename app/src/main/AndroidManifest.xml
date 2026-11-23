@@ -73,6 +73,11 @@
                 android:resource="@xml/days_hero_widget_info" />
         </receiver>
 
+        <!-- 主视觉组件延迟兜底重渲染的闹钟接收器（v4.5）：只接本应用自己的显式广播 -->
+        <receiver
+            android:name=".widget.HeroDelayedRefreshReceiver"
+            android:exported="false" />
+
         <!-- 主视觉组件的选事件配置界面（添加组件时拉起，支持 reconfigure 的启动器可重进改选） -->
         <activity
             android:name=".widget.HeroWidgetConfigureActivity"

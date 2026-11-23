@@ -64,6 +64,32 @@ class HeroWidgetRenderPathTest {
         assertEquals(idB, hero?.first?.id)
     }
 
+    // ---- v4.5 复现：真·首次添加的键集合（配置 id 与渲染 id 对不上） ----
+
+    @Test
+    fun renderFunction_mismatchedIds_singleConfig_adoptsIt() = runBlocking {
+        // 云真机 v4.4 实测场景：全新安装、桌面上只有一个主视觉组件，配置界面
+        // 拿到的 id（记作 7）与渲染侧解出的 id（记作 9）对不上——选择按 7 存
+        // （重开配置界面 ✓ 还在，证明存住了），渲染按 9 读主键必然读不到。
+        // 偏好里全局只有这一份配置，它必然属于桌面上这个组件，渲染必须认它。
+        // Robolectric 下 getAppWidgetIds 返回空（placedCount=0），对应真机首次
+        // 添加窗口期放置列表口径未定的状态；v4.4 的回落要求 placedCount==1，
+        // 在此状态下整体失效、只能走自动口径（EventA）——与实测一致（先红）。
+        container.prefs.setHeroWidgetEventId(7, idB)
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(9))
+        assertEquals(idB, hero?.first?.id)
+    }
+
+    @Test
+    fun renderFunction_mismatchedIds_twoConfigs_staysAuto() = runBlocking {
+        // 残留键污染：偏好里有两份配置（哪怕指向同一事件），渲染的这个实例
+        // 主键又没命中——归属不明确就不猜，保持自动口径（行为钉死，防回退）
+        container.prefs.setHeroWidgetEventId(7, idB)
+        container.prefs.setHeroWidgetEventId(8, idB)
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(9))
+        assertEquals(idA, hero?.first?.id)
+    }
+
     @Test
     fun renderFunction_withoutConfig_fallsBackToNearestFuture() = runBlocking {
         val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(7))
@@ -77,28 +103,26 @@ class HeroWidgetRenderPathTest {
         assertEquals(idA, hero?.first?.id)
     }
 
-    // ---- pickConfiguredId：单实例回落的判定逻辑（生产函数的一部分） ----
+    // ---- pickConfiguredId：回落的判定逻辑（生产函数的一部分，v4.5 口径） ----
 
     @Test
     fun pickConfiguredId_primaryHitWins() {
-        assertEquals(42L, HeroDaysWidget.pickConfiguredId(42L, mapOf(7 to 43L), placedCount = 2))
+        assertEquals(42L, HeroDaysWidget.pickConfiguredId(42L, mapOf(7 to 43L)))
     }
 
     @Test
-    fun pickConfiguredId_singleConfigSinglePlaced_usesTheOnlyConfig() {
-        // 配置界面的 id 与渲染侧 id 对不上时的兜底：只有一份配置、一个实例，必属它
-        assertEquals(42L, HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L), placedCount = 1))
+    fun pickConfiguredId_singleConfig_usesItRegardlessOfPlacedCount() {
+        // 配置界面的 id 与渲染侧 id 对不上时的兜底：全局只有一份配置就必属
+        // 桌面上的主视觉组件，直接认——v4.5 起不再附带实例数条件（v4.4 的
+        // placedCount==1 在首次添加窗口期不成立，是回落哑火的真因）
+        assertEquals(42L, HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L)))
     }
 
     @Test
     fun pickConfiguredId_ambiguousCases_stayAuto() {
-        // 多个实例在场：一份配置不知属于谁，不猜
-        assertNull(HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L), placedCount = 2))
-        // 多份配置在场：渲染的这个实例没配置过，不抢别人的
-        assertNull(HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L, 8 to 43L), placedCount = 1))
+        // 多份配置在场：渲染的这个实例主键没命中，归属有歧义，不猜
+        assertNull(HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L, 8 to 43L)))
         // 没有任何配置
-        assertNull(HeroDaysWidget.pickConfiguredId(null, emptyMap(), placedCount = 1))
-        // 实例数取不到（0）：不启用回落
-        assertNull(HeroDaysWidget.pickConfiguredId(null, mapOf(7 to 42L), placedCount = 0))
+        assertNull(HeroDaysWidget.pickConfiguredId(null, emptyMap()))
     }
 }
