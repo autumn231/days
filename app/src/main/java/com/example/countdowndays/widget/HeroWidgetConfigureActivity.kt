@@ -144,15 +144,15 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
      * 协程；兜底排程与结果返回其次；刷新最后单独用不依附 Activity
      * 生命周期的协程发——刷新再失败也连带不了前面任何一步。
      *
-     * 刷新通道（见 HeroWidgetRefresher）：广播为主通道（走宿主 onUpdate
-     * 同款路径）、Glance update() 并行尝试、updateAll 补充。+7s 还有
-     * 回执检查兜底：渲染没跟上就自动升级广播再刷。
+     * 刷新通道（见 HeroWidgetRefresher）：经典直推为主通道（v4.5.4，
+     * RemoteViews 同步推送）、广播并行保险。+7s 还有回执检查兜底：
+     * 渲染没跟上就自动升级再刷。
      */
     private fun confirmSelection(appWidgetId: Int, eventId: Long?) {
         val container = (application as CountdownApp).container
         val prefs = container.prefs
         // 1) 落盘：生产保存路径 saveHeroSelection（内部 commit() 同步落盘）：
-        // 先把选择钉死，后面不管哪条刷新路径真正跑起来，provideGlance
+        // 先把选择钉死，后面不管哪条刷新路径真正跑起来，渲染解析
         // 读到的都是新选择。v4.5.1 起单实例时还同步写规范槽＋镜像到实际
         // 放置 id，并修剪残留键——细节见 saveHeroSelection 的注释，这是
         // 「改选只跟随一次」换存法的主体，不许绕过它直接写 per-id 键。
@@ -178,13 +178,12 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
             Activity.RESULT_OK,
             Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         )
-        // 4) 刷新：单独协程，不依附 Activity 生命周期；广播（主）→
-        // Glance update()（并行尝试）→ updateAll（补充）
+        // 4) 刷新：单独协程，不依附 Activity 生命周期；经典直推（主，
+        // 诊断端实证配置保存上下文即时出帧）＋广播通道并行保险
         val appContext = applicationContext
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            HeroWidgetRefresher.refreshAll(appContext, "配置保存")
             HeroWidgetRefresher.sendUpdateBroadcast(appContext)
-            HeroWidgetRefresher.glanceUpdateEach(appContext, "即时update")
-            HeroWidgetRefresher.updateAllNow(appContext)
         }
         finish()
     }
@@ -192,7 +191,7 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
     /** 系统当前放置着的主视觉组件实例 id 列表（与配置界面收到的 id 对照取证用） */
     private fun placedHeroWidgetIds(): List<Int> = runCatching {
         AppWidgetManager.getInstance(this)
-            .getAppWidgetIds(ComponentName(this, HeroDaysWidgetReceiver::class.java))
+            .getAppWidgetIds(ComponentName(this, HeroClassicWidgetProvider::class.java))
             .toList()
     }.getOrDefault(emptyList())
 }

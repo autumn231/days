@@ -62,7 +62,7 @@
 
         <!-- 桌面小组件（主视觉款） -->
         <receiver
-            android:name=".widget.HeroDaysWidgetReceiver"
+            android:name=".widget.HeroClassicWidgetProvider"
             android:exported="true"
             android:label="倒数日 · 主视觉">
             <intent-filter>

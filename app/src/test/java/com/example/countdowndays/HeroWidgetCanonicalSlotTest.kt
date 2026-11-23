@@ -3,12 +3,11 @@ package com.example.countdowndays
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
-import androidx.glance.appwidget.AppWidgetId
 import androidx.test.core.app.ApplicationProvider
 import com.example.countdowndays.data.EventEntity
 import com.example.countdowndays.util.DateUtils
 import com.example.countdowndays.widget.HeroDaysWidget
-import com.example.countdowndays.widget.HeroDaysWidgetReceiver
+import com.example.countdowndays.widget.HeroClassicWidgetProvider
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -39,7 +38,7 @@ import org.robolectric.annotation.Config
  * 单实例时选择覆盖写进与 id 无关的规范槽＋镜像到实际放置 id，保存后修剪
  * 残留键；解析统一走 resolveConfiguredEventId（渲染与配置页 ✓ 同源）。
  * 放置实例在 Robolectric 里用 ShadowAppWidgetManager.bindAppWidgetId 登记
- * id=42，渲染走 provideGlance 的生产函数 resolveHeroForInstance 全链路。
+ * id=42，渲染走经典渲染器的生产函数 resolveHeroForInstance 全链路。
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -67,7 +66,7 @@ class HeroWidgetCanonicalSlotTest {
         Shadows.shadowOf(AppWidgetManager.getInstance(app))
             .bindAppWidgetId(
                 placedId,
-                ComponentName(app, HeroDaysWidgetReceiver::class.java)
+                ComponentName(app, HeroClassicWidgetProvider::class.java)
             )
         val today = LocalDate.now()
         // A 是自动口径必然选中的最近事件；B、C 是用户先后改选的目标
@@ -91,7 +90,7 @@ class HeroWidgetCanonicalSlotTest {
         HeroDaysWidget.saveHeroSelection(prefs, 7, idB, listOf(placedId))
         assertEquals(
             idB,
-            HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(placedId))?.first?.id
+            HeroDaysWidget.resolveHeroForInstance(app, placedId)?.first?.id
         )
         // 第二次改选：配置界面的 id 漂移成 8，选了 EventC。渲染必须跟随
         // 最后一次选择——v4.5 时偏好里攒下两份配置、回落哑火、退回自动
@@ -99,7 +98,7 @@ class HeroWidgetCanonicalSlotTest {
         HeroDaysWidget.saveHeroSelection(prefs, 8, idC, listOf(placedId))
         assertEquals(
             idC,
-            HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(placedId))?.first?.id
+            HeroDaysWidget.resolveHeroForInstance(app, placedId)?.first?.id
         )
     }
 
@@ -116,7 +115,7 @@ class HeroWidgetCanonicalSlotTest {
         assertEquals(setOf(7, placedId), prefs.heroWidgetConfigs().keys)
         assertEquals(
             idC,
-            HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(placedId))?.first?.id
+            HeroDaysWidget.resolveHeroForInstance(app, placedId)?.first?.id
         )
     }
 
@@ -156,7 +155,7 @@ class HeroWidgetCanonicalSlotTest {
         assertNull(HeroDaysWidget.resolveConfiguredEventId(prefs, 8, listOf(placedId)))
         assertEquals(
             idA,
-            HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(placedId))?.first?.id
+            HeroDaysWidget.resolveHeroForInstance(app, placedId)?.first?.id
         )
     }
 

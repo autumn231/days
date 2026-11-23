@@ -34,7 +34,7 @@ import kotlinx.coroutines.launch
  * 所以调用方不需要再做「只排一次」的标记（v4.4 的 seen 标记有个隐患：
  * 先置标记再排程，排程失败一次就被永久跳过，本版连同标记一并去掉）。
  *
- * 兜底重渲染只走 Glance update()、不发系统更新广播、不经 Receiver.onUpdate，
+ * 兜底重渲染只走经典直推（HeroWidgetRefresher.refreshAll）、不经 Provider.onUpdate，
  * 不会反过来再排一份闹钟，没有自激循环；且本身幂等——渲染决策是自洽的
  * （见 HeroDaysWidget.resolveHeroForInstance），没配置就按自动口径出帧。
  * 日志沿用 HeroWidgetCfg / HeroWidgetRender 并注明 delayed 与来源。
@@ -120,8 +120,8 @@ class HeroDelayedRefreshReceiver : BroadcastReceiver() {
                     "HeroWidgetRender",
                     "delayed 兜底重渲染触发(alarm) placed=$placedIds targets=$targets"
                 )
-                // v4.5.3：实际刷新改走共享通道集（HeroWidgetRefresher）
-                HeroWidgetRefresher.glanceUpdateEach(appContext, "闹钟延迟刷新")
+                // 实际刷新走共享通道集（HeroWidgetRefresher）：经典直推
+                HeroWidgetRefresher.refreshAll(appContext, "闹钟延迟刷新")
             } finally {
                 pending.finish()
             }
@@ -140,8 +140,8 @@ class HeroDelayedRefreshReceiver : BroadcastReceiver() {
  * ＋时刻）；本闹钟到点拿两者比对（[evaluateHeroReceipt]）：
  *
  * - 达标 → 什么都不做；
- * - 未达标/无渲染记录 → 升级走广播通道（宿主 onUpdate 同款路径，该机
- *   上唯一有出帧实证）再刷一次＋Glance update 兜底。
+ * - 未达标/无渲染记录 → 升级走广播通道（宿主 onUpdate 同款路径）
+ *   再刷一次＋经典直推兜底。
  *
  * 闹钟与 [HeroDelayedRefresh] 完全分离：独立 action、独立 requestCode
  * （4502），不再出现「周期 onUpdate 把保存兜底顶掉」的共用覆盖。检查
@@ -213,9 +213,9 @@ class HeroReceiptCheckReceiver : BroadcastReceiver() {
                     "receipt 回执检查 verdict=$verdict 期望=$expectation 最近渲染=$render"
                 )
                 if (verdict != HeroReceiptVerdict.MET) {
-                    // 未达标/无渲染记录：升级走广播通道（主）＋Glance update 兜底
+                    // 未达标/无渲染记录：升级走广播通道＋经典直推再刷一次
                     HeroWidgetRefresher.sendUpdateBroadcast(appContext)
-                    HeroWidgetRefresher.glanceUpdateEach(appContext, "回执升级update")
+                    HeroWidgetRefresher.refreshAll(appContext, "回执升级")
                 }
             } finally {
                 pending.finish()

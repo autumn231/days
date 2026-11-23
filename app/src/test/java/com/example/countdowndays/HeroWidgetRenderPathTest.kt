@@ -1,7 +1,6 @@
 package com.example.countdowndays
 
 import android.content.Context
-import androidx.glance.appwidget.AppWidgetId
 import androidx.test.core.app.ApplicationProvider
 import com.example.countdowndays.data.EventEntity
 import com.example.countdowndays.util.DateUtils
@@ -21,7 +20,7 @@ import org.robolectric.annotation.Config
  *
  * v4.1/v4.2 的教训：测试测的不是生产路径。HeroWidgetConfigChainTest 存/读两端
  * 都用 PrefsManager、再手动喂 resolveHero，而生产渲染走的是 provideGlance 里
- * 「GlanceId 解 id → 读配置 → 查库 → resolveHero」这一整段——云真机实测这段在
+ * 「按 id 读配置 → 查库 → resolveHero」这一整段——云真机实测这段在
  * 真机上读不到已保存的配置，旧测试却全绿。本测试直接调 provideGlance 本身
  * 调用的那个生产函数 resolveHeroForInstance（真实 SharedPreferences＋真实
  * Room 库），杜绝两条路径再次分叉。
@@ -60,7 +59,7 @@ class HeroWidgetRenderPathTest {
         // 存：与配置界面完全同一调用——按 appWidgetId 存 EventB
         container.prefs.setHeroWidgetEventId(7, idB)
         // 渲染：provideGlance 调用的生产函数，必须命中 EventB 而不是自动口径的 EventA
-        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(7))
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, 7)
         assertEquals(idB, hero?.first?.id)
     }
 
@@ -76,7 +75,7 @@ class HeroWidgetRenderPathTest {
         // 添加窗口期放置列表口径未定的状态；v4.4 的回落要求 placedCount==1，
         // 在此状态下整体失效、只能走自动口径（EventA）——与实测一致（先红）。
         container.prefs.setHeroWidgetEventId(7, idB)
-        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(9))
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, 9)
         assertEquals(idB, hero?.first?.id)
     }
 
@@ -86,20 +85,20 @@ class HeroWidgetRenderPathTest {
         // 主键又没命中——归属不明确就不猜，保持自动口径（行为钉死，防回退）
         container.prefs.setHeroWidgetEventId(7, idB)
         container.prefs.setHeroWidgetEventId(8, idB)
-        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(9))
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, 9)
         assertEquals(idA, hero?.first?.id)
     }
 
     @Test
     fun renderFunction_withoutConfig_fallsBackToNearestFuture() = runBlocking {
-        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(7))
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, 7)
         assertEquals(idA, hero?.first?.id)
     }
 
     @Test
     fun renderFunction_configForDeletedEvent_fallsBackToAuto() = runBlocking {
         container.prefs.setHeroWidgetEventId(7, 999_999L)
-        val hero = HeroDaysWidget.resolveHeroForInstance(app, AppWidgetId(7))
+        val hero = HeroDaysWidget.resolveHeroForInstance(app, 7)
         assertEquals(idA, hero?.first?.id)
     }
 
