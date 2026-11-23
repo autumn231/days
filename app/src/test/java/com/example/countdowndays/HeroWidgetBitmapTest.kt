@@ -3,6 +3,7 @@ package com.example.countdowndays
 import com.example.countdowndays.widget.HERO_MAX_BITMAP_BYTES
 import com.example.countdowndays.widget.bitmapBytes
 import com.example.countdowndays.widget.fitBitmapSize
+import com.example.countdowndays.widget.heroCornerRadiusPx
 import com.example.countdowndays.widget.heroDarkTextForLuminance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +55,26 @@ class HeroWidgetBitmapTest {
     @Test
     fun fitBitmapSize_degenerateInput() {
         assertEquals(1 to 1, fitBitmapSize(0, 0, 100, 100))
+    }
+
+    @Test
+    fun heroCornerRadiusPx_dpConversion() {
+        // 22dp 口径：density=2 → 44px，空间充足时不封顶
+        assertEquals(44f, heroCornerRadiusPx(800, 400, 2f), 0.01f)
+        assertEquals(22f, heroCornerRadiusPx(800, 400, 1f), 0.01f)
+    }
+
+    @Test
+    fun heroCornerRadiusPx_cappedAtHalfShortSide() {
+        // 短边 60 → 半径封顶 30（即便 22dp×3=66 更大，圆角矩形也不退化）
+        assertEquals(30f, heroCornerRadiusPx(100, 60, 3f), 0.01f)
+    }
+
+    @Test
+    fun heroCornerRadiusPx_degenerate() {
+        assertEquals(0f, heroCornerRadiusPx(0, 100, 2f), 0.01f)
+        assertEquals(0f, heroCornerRadiusPx(100, 0, 2f), 0.01f)
+        assertEquals(0f, heroCornerRadiusPx(100, 100, 0f), 0.01f)
     }
 
     @Test

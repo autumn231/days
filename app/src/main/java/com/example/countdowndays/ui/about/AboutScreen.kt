@@ -2,6 +2,7 @@ package com.example.countdowndays.ui.about
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,12 +14,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -55,29 +60,20 @@ private const val REPO_URL = "https://github.com/autumn231/days"
 private const val REPO_DISPLAY = "github.com/autumn231/days"
 private const val LICENSE_NAME = "MIT License"
 
-/** 与仓库根目录 LICENSE 文件逐字一致的全文 */
+/**
+ * MIT 许可证通行中文译文（v4.5.5 起改中文）：标题与版权行保留英文原文，
+ * 条款内容与仓库根目录 LICENSE 文件（英文原文）一一对应。
+ */
 private val LICENSE_TEXT = """
 MIT License
 
 Copyright (c) 2026 秋
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+特此免费授予任何获得本软件及相关文档文件（以下简称「软件」）副本的人，不受限制地处理本软件的权利，包括但不限于使用、复制、修改、合并、发布、分发、再许可及／或出售本软件副本的权利，并允许获提供本软件的人这样做，但须满足以下条件：
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+上述版权声明及本许可声明应包含在本软件的所有副本或重要部分中。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+本软件按「原样」提供，不附任何形式的明示或暗示担保，包括但不限于适销性、特定用途适用性及不侵权的担保。在任何情况下，作者或版权持有人均不对由本软件或本软件的使用或其他交易引起、产生或与之相关的任何索赔、损害或其他责任负责，无论是在合同诉讼、侵权行为还是其他诉讼中。
 """.trimIndent()
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,14 +108,26 @@ fun AboutScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // 图标
-            Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(112.dp)
-                    .clip(RoundedCornerShape(28.dp))
-            )
+            // 图标：本体下半截是奶油白（#FFFBF2），与页面近白背景相融看不见
+            // 边界（v4.5.5 用户截图实证）——垫一块浅色圆角底衬＋淡描边＋柔和
+            // 阴影，把图标轮廓从背景里托出来
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                shadowElevation = 4.dp,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                )
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(96.dp)
+                )
+            }
             Text(
                 text = "倒数日",
                 style = MaterialTheme.typography.headlineMedium,
@@ -151,7 +159,10 @@ fun AboutScreen(onBack: () -> Unit) {
             // 作者与开源信息卡片（v4.0：移除联系方式，加仓库地址与开源许可；
             // v4.1：作者行改 GitHub 账号 autumn231，点击跳个人主页；
             // v4.5.3：作者显示名改「秋」（链接不变）；v4.5.2 的组件诊断
-            // 入口、诊断页与全部诊断代码已整体删除）
+            // 入口、诊断页与全部诊断代码已整体删除；
+            // v4.5.5：作者行加 GitHub 头像（打包进 APK，离线可用）；三行右侧
+            // 加跳转标记——作者/仓库是方框斜箭头（浏览器外跳），许可行是
+            // 右箭头（应用内打开中文译文弹窗），两种去向一眼可分）
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -162,6 +173,17 @@ fun AboutScreen(onBack: () -> Unit) {
                         icon = Icons.Filled.Person,
                         label = "作者",
                         value = AUTHOR_DISPLAY,
+                        external = true,
+                        leading = {
+                            Image(
+                                painter = painterResource(R.drawable.author_avatar),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                            )
+                        },
                         onClick = {
                             runCatching {
                                 context.startActivity(
@@ -174,6 +196,7 @@ fun AboutScreen(onBack: () -> Unit) {
                         icon = Icons.Filled.Code,
                         label = "开源仓库",
                         value = REPO_DISPLAY,
+                        external = true,
                         onClick = {
                             runCatching {
                                 context.startActivity(
@@ -216,7 +239,9 @@ private fun InfoRow(
     icon: ImageVector,
     label: String,
     value: String,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    external: Boolean = false,
+    leading: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -224,12 +249,16 @@ private fun InfoRow(
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
-        )
+        if (leading != null) {
+            leading()
+        } else {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp)
+            )
+        }
         Spacer(Modifier.size(16.dp))
         Column {
             Text(
@@ -247,6 +276,25 @@ private fun InfoRow(
                     MaterialTheme.colorScheme.onSurface
                 }
             )
+        }
+        if (onClick != null) {
+            Spacer(Modifier.weight(1f))
+            // 右侧去向标记（v4.5.5）：外跳浏览器＝方框斜箭头，应用内打开＝右箭头
+            if (external) {
+                Icon(
+                    Icons.Filled.OpenInNew,
+                    contentDescription = "在浏览器打开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
     }
 }

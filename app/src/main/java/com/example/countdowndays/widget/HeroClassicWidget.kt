@@ -8,10 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Bundle
 import android.util.Log
@@ -250,6 +252,19 @@ internal fun fitBitmapSize(
 internal fun heroDarkTextForLuminance(luminance: Float): Boolean =
     luminance >= HERO_TEXT_CROSSOVER
 
+/** 主视觉圆角半径（dp 口径，v4.5.5）：与 App 内卡片圆角同一量级 */
+internal const val HERO_CORNER_RADIUS_DP = 22f
+
+/**
+ * 圆角半径换算到成品位图像素（纯函数，可单测）：dp×density，且不得超过
+ * 短边一半（小尺寸位图上半径过大时圆角矩形会退化）。非法入参返回 0。
+ */
+internal fun heroCornerRadiusPx(widthPx: Int, heightPx: Int, density: Float): Float {
+    if (widthPx <= 0 || heightPx <= 0 || density <= 0f) return 0f
+    val cap = min(widthPx, heightPx) / 2f
+    return min(HERO_CORNER_RADIUS_DP * density, cap)
+}
+
 /** 主视觉组件的成品背景：位图（已按最终罩法处理并缩到推送上限内）＋该背景上该用深字还是白字 */
 private class HeroArtwork(val bitmap: Bitmap, val darkText: Boolean)
 
@@ -356,11 +371,20 @@ object HeroWidgetRenderer {
         views.setOnClickPendingIntent(R.id.hero_root, pending)
 
         if (hero == null) {
-            views.setInt(
-                R.id.hero_root, "setBackgroundColor",
-                ContextCompat.getColor(context, R.color.widget_bg)
+            // 占位底同样走圆角纯色位图（v4.5.5），根背景透明让圆角透出桌面
+            val (pTargetW, pTargetH) = targetSizePx(context, manager, appWidgetId)
+            val (pFitW, pFitH) = fitBitmapSize(pTargetW, pTargetH, pTargetW, pTargetH)
+            val pDensity = context.resources.displayMetrics.density
+            views.setInt(R.id.hero_root, "setBackgroundColor", AndroidColor.TRANSPARENT)
+            views.setViewVisibility(R.id.hero_bg, View.VISIBLE)
+            views.setImageViewBitmap(
+                R.id.hero_bg,
+                roundedSolidBitmap(
+                    pFitW, pFitH,
+                    ContextCompat.getColor(context, R.color.widget_bg),
+                    heroCornerRadiusPx(pFitW, pFitH, pDensity)
+                )
             )
-            views.setViewVisibility(R.id.hero_bg, View.GONE)
             views.setTextViewText(R.id.hero_name, "还没有记录的日子\n打开应用添加一个吧")
             views.setTextViewTextSize(
                 R.id.hero_name, TypedValue.COMPLEX_UNIT_SP, 13f
@@ -396,11 +420,23 @@ object HeroWidgetRenderer {
         if (artwork != null) {
             views.setViewVisibility(R.id.hero_bg, View.VISIBLE)
             views.setImageViewBitmap(R.id.hero_bg, artwork.bitmap)
-            // 位图未铺满的边角露出事件强调色兜底（alpha 强制 0xFF 不透底）
-            views.setInt(R.id.hero_root, "setBackgroundColor", eventArgb(event.colorIndex))
+            // 照片位图四角已烘成圆角透明（v4.5.5）：根背景必须透明，
+            // 圆角处才能透出桌面，而不是露出一圈直角底色
+            views.setInt(R.id.hero_root, "setBackgroundColor", AndroidColor.TRANSPARENT)
         } else {
-            views.setViewVisibility(R.id.hero_bg, View.GONE)
-            views.setInt(R.id.hero_root, "setBackgroundColor", eventArgb(event.colorIndex))
+            // 无照片：烘一张同尺寸圆角纯色位图打底（v4.5.5，不再是直角色块），
+            // 尺寸同样过 fitBitmapSize 的字节上限纪律
+            val (sFitW, sFitH) = fitBitmapSize(targetW, targetH, targetW, targetH)
+            val sDensity = context.resources.displayMetrics.density
+            views.setViewVisibility(R.id.hero_bg, View.VISIBLE)
+            views.setImageViewBitmap(
+                R.id.hero_bg,
+                roundedSolidBitmap(
+                    sFitW, sFitH, eventArgb(event.colorIndex),
+                    heroCornerRadiusPx(sFitW, sFitH, sDensity)
+                )
+            )
+            views.setInt(R.id.hero_root, "setBackgroundColor", AndroidColor.TRANSPARENT)
         }
 
         views.setTextViewText(R.id.hero_name, event.name)
@@ -542,13 +578,22 @@ object HeroWidgetRenderer {
                     if (scaled !== bmp) bmp.recycle()
                     scaled
                 }
+                // 圆角烘进位图（v4.5.5）：缩放定稿后按最终像素算半径再裁角，
+                // 圆外透明；经典 RemoteViews 没有可靠的运行时裁剪，只能这么做
+                val radius = heroCornerRadiusPx(
+                    finalBmp.width, finalBmp.height,
+                    context.resources.displayMetrics.density
+                )
+                val rounded = applyRoundedCorners(finalBmp, radius)
+                if (rounded !== finalBmp) finalBmp.recycle()
                 Log.i(
                     "HeroWidgetRender",
-                    "hero 位图 ${finalBmp.width}x${finalBmp.height} " +
-                        "bytes=${bitmapBytes(finalBmp.width, finalBmp.height)} " +
-                        "上限=$HERO_MAX_BITMAP_BYTES darkText=${finished.darkText}"
+                    "hero 位图 ${rounded.width}x${rounded.height} " +
+                        "bytes=${bitmapBytes(rounded.width, rounded.height)} " +
+                        "上限=$HERO_MAX_BITMAP_BYTES darkText=${finished.darkText} " +
+                        "圆角半径=${radius}px"
                 )
-                HeroArtwork(finalBmp, finished.darkText)
+                HeroArtwork(rounded, finished.darkText)
             }.getOrNull()
         }
     }
@@ -605,6 +650,42 @@ object HeroWidgetRenderer {
         canvas.drawRect(
             0f, 0f, out.width.toFloat(), out.height.toFloat(),
             Paint().apply { shader = gradient }
+        )
+        return out
+    }
+
+    /**
+     * 把成品位图四角改圆角（v4.5.5）：用 BitmapShader 把原图填进圆角矩形，
+     * 圆外区域保持透明，推送后透出桌面（抗锯齿开）。半径 ≤0 时原样返回；
+     * 否则返回新位图，原图由调用方回收。
+     */
+    private fun applyRoundedCorners(src: Bitmap, radiusPx: Float): Bitmap {
+        if (radiusPx <= 0f) return src
+        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        }
+        canvas.drawRoundRect(
+            RectF(0f, 0f, src.width.toFloat(), src.height.toFloat()),
+            radiusPx, radiusPx, paint
+        )
+        return out
+    }
+
+    /** 圆角纯色位图（无照片/占位时的底，v4.5.5）：圆角矩形填充纯色、四角透明 */
+    private fun roundedSolidBitmap(
+        width: Int,
+        height: Int,
+        argb: Int,
+        radiusPx: Float
+    ): Bitmap {
+        val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = argb }
+        canvas.drawRoundRect(
+            RectF(0f, 0f, width.toFloat(), height.toFloat()),
+            radiusPx, radiusPx, paint
         )
         return out
     }
