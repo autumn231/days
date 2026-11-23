@@ -252,7 +252,7 @@ fun AddEditEventScreen(
                 )
             }
             Text(
-                text = "打开右侧开关按农历记录（生日、祭日等）",
+                text = "打开右侧开关按农历记录（生日等）",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )

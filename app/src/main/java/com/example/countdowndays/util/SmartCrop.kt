@@ -389,6 +389,50 @@ object SmartCrop {
         return frosted to liquid
     }
 
+    /** WCAG 相对亮度（0..1），与分区亮度同一实现，供纯色底等场景按同一口径选字色 */
+    fun wcagLuminanceOf(r: Float, g: Float, b: Float): Float = wcagLuminance(r, g, b)
+
+    /**
+     * 位图指定区域（分数坐标 0..1）的平均 WCAG 相对亮度：先平均 RGB 再算亮度，
+     * 与分区亮度同一口径。供桌面组件在渲染前实测文字区明暗、决定罩法与字色。
+     * 采样步长自适应（每边最多约 64 个采样点）；位图太小返回 null。
+     */
+    fun bitmapRegionLuminance(
+        bmp: Bitmap,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float
+    ): Float? {
+        val w = bmp.width
+        val h = bmp.height
+        if (w < 4 || h < 4) return null
+        val x0 = (left.coerceIn(0f, 1f) * w).toInt().coerceIn(0, w - 1)
+        val x1 = (right.coerceIn(0f, 1f) * w).toInt().coerceIn(x0 + 1, w)
+        val y0 = (top.coerceIn(0f, 1f) * h).toInt().coerceIn(0, h - 1)
+        val y1 = (bottom.coerceIn(0f, 1f) * h).toInt().coerceIn(y0 + 1, h)
+        val step = max(1, max(x1 - x0, y1 - y0) / 64)
+        var sr = 0.0
+        var sg = 0.0
+        var sb = 0.0
+        var n = 0
+        var y = y0
+        while (y < y1) {
+            var x = x0
+            while (x < x1) {
+                val c = bmp.getPixel(x, y)
+                sr += (c shr 16 and 0xFF) / 255f
+                sg += (c shr 8 and 0xFF) / 255f
+                sb += (c and 0xFF) / 255f
+                n++
+                x += step
+            }
+            y += step
+        }
+        if (n == 0) return null
+        return wcagLuminance((sr / n).toFloat(), (sg / n).toFloat(), (sb / n).toFloat())
+    }
+
     private fun wcagLuminance(r: Float, g: Float, b: Float): Float {
         fun lin(c: Float): Float {
             val v = c.coerceIn(0f, 1f)

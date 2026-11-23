@@ -12,4 +12,8 @@
     <!-- 主视觉组件（照片底/彩色底 + 白字，两套外观下都用白） -->
     <color name="widget_hero_text">#FFFFFFFF</color>
     <color name="widget_hero_text_dim">#D9FFFFFF</color>
+    <!-- 主视觉组件浅底（提亮罩）时的深色字：只定义在此，夜间不覆盖，
+         因为它取决于照片明暗而非系统主题 -->
+    <color name="widget_hero_text_dark">#FF1F1B16</color>
+    <color name="widget_hero_text_dark_dim">#B31F1B16</color>
 </resources>

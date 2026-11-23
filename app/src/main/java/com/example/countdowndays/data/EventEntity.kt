@@ -23,7 +23,7 @@ data class EventEntity(
     @ColumnInfo(defaultValue = "'NONE'") val repeatType: String = "NONE",
     /** 重复结束日期（epoch 毫秒，当天 0 点）；null 表示永不结束 */
     val repeatEndDate: Long? = null,
-    /** 是否按农历记录（生日、祭日等） */
+    /** 是否按农历记录（生日等） */
     @ColumnInfo(defaultValue = "0") val isLunar: Boolean = false,
     /** 农历月（1-12），isLunar 为 true 时有效 */
     @ColumnInfo(defaultValue = "0") val lunarMonth: Int = 0,

@@ -171,7 +171,8 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
 /**
  * 桌面小组件（主视觉款，v3.23 新增）：单个最值得看的日子整卡呈现，
  * 设计语言与 App 内展示页统一——事件配图作背景（按智能裁切焦点裁切）、
- * 底部压暗罩、白字、衬线大数字。无配图时用事件强调色纯色底。
+ * 衬线大数字。罩法与字色按背景实测亮度自适应（v4.0）：深底用底部压暗罩＋白字，
+ * 浅底改浅色提亮罩＋深色字；无配图时用事件强调色纯色底，字色同样按底色亮度选。
  * 选事件口径：置顶优先，其次最近的将来事件，再其次最近的过去事件。
  */
 class HeroDaysWidget : GlanceAppWidget() {
@@ -183,8 +184,8 @@ class HeroDaysWidget : GlanceAppWidget() {
             pickHero(events.map { it to it.occurrence() })
         }.getOrNull()
 
-        val bitmap = if (hero != null) {
-            heroBitmap(context, hero.first, HERO_ASPECT)
+        val artwork = if (hero != null) {
+            heroArtwork(context, hero.first, HERO_ASPECT)
         } else null
 
         provideContent {
@@ -208,6 +209,16 @@ class HeroDaysWidget : GlanceAppWidget() {
                 }
             } else {
                 val (event, occ) = hero
+                // 字色按最终背景亮度选：配图用渲染时实测的结论，纯色底看底色本身，
+                // 交叉点与展示页选字色同一口径（L<0.19 用浅字）
+                val darkText = artwork?.darkText ?: run {
+                    val base = eventColor(event.colorIndex)
+                    SmartCrop.wcagLuminanceOf(base.red, base.green, base.blue) >= HERO_TEXT_CROSSOVER
+                }
+                val heroTextRes =
+                    if (darkText) R.color.widget_hero_text_dark else R.color.widget_hero_text
+                val heroTextDimRes =
+                    if (darkText) R.color.widget_hero_text_dark_dim else R.color.widget_hero_text_dim
                 val openIntent = Intent(context, MainActivity::class.java)
                     .putExtra("open_event_id", event.id)
                 Box(
@@ -217,9 +228,9 @@ class HeroDaysWidget : GlanceAppWidget() {
                         .cornerRadius(24.dp)
                         .clickable(actionStartActivity(openIntent))
                 ) {
-                    if (bitmap != null) {
+                    if (artwork != null) {
                         Image(
-                            provider = ImageProvider(bitmap),
+                            provider = ImageProvider(artwork.bitmap),
                             contentDescription = event.name,
                             modifier = GlanceModifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -237,7 +248,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                             style = TextStyle(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = ColorProvider(R.color.widget_hero_text)
+                                color = ColorProvider(heroTextRes)
                             )
                         )
                         Spacer(GlanceModifier.height(2.dp))
@@ -252,7 +263,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                                     fontSize = 36.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Serif,
-                                    color = ColorProvider(R.color.widget_hero_text)
+                                    color = ColorProvider(heroTextRes)
                                 )
                             )
                             if (!occ.isToday && !occ.ended) {
@@ -261,7 +272,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                                     text = if ((occ.daysToNext ?: 0L) > 0) "天后" else "天前",
                                     style = TextStyle(
                                         fontSize = 13.sp,
-                                        color = ColorProvider(R.color.widget_hero_text)
+                                        color = ColorProvider(heroTextRes)
                                     ),
                                     modifier = GlanceModifier.padding(bottom = 6.dp)
                                 )
@@ -276,7 +287,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                                 maxLines = 1,
                                 style = TextStyle(
                                     fontSize = 12.sp,
-                                    color = ColorProvider(R.color.widget_hero_text_dim)
+                                    color = ColorProvider(heroTextDimRes)
                                 )
                             )
                         }
@@ -288,7 +299,7 @@ class HeroDaysWidget : GlanceAppWidget() {
                                     maxLines = 1,
                                     style = TextStyle(
                                         fontSize = 12.sp,
-                                        color = ColorProvider(R.color.widget_hero_text_dim)
+                                        color = ColorProvider(heroTextDimRes)
                                     )
                                 )
                             }
@@ -322,11 +333,26 @@ class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HeroDaysWidget()
 }
 
+/** 主视觉文字区（左下）在成品图上的分数范围：名称/大数字/日期/预告四行都落在这里 */
+private const val HERO_ZONE_LEFT = 0.03f
+private const val HERO_ZONE_TOP = 0.45f
+private const val HERO_ZONE_RIGHT = 0.88f
+private const val HERO_ZONE_BOTTOM = 0.98f
+
+/** 字色交叉点：文字区亮度低于它用浅字、高于它用深字，与展示页选字色同一口径 */
+private const val HERO_TEXT_CROSSOVER = 0.19f
+
+/** 主视觉组件的成品背景：位图（已按最终罩法处理）＋该背景上该用深字还是白字 */
+private class HeroArtwork(val bitmap: Bitmap, val darkText: Boolean)
+
 /**
  * 主视觉组件的背景图：解码（长边采样到 1280 内）→ 按智能裁切焦点裁到目标宽高比
- * → 底部压暗渐变（与展示页同款罩法，保证白字可读）。任何失败返回 null，组件退纯色底。
+ * → 选罩法与字色：先按底部压暗罩渲染，实测左下文字区亮度——低于交叉点（0.19，
+ * 与展示页分区亮度选字色同一口径）就用压暗罩＋白字；压暗后文字区仍偏亮（浅色
+ * 照片，白字会被洗没）则改浅色提亮罩＋深色字。实测失败回落压暗罩＋白字（旧行为）。
+ * 整体任何失败返回 null，组件退纯色底（字色在 provideGlance 里同样按亮度选）。
  */
-private suspend fun heroBitmap(context: Context, event: EventEntity, aspect: Float): Bitmap? {
+private suspend fun heroArtwork(context: Context, event: EventEntity, aspect: Float): HeroArtwork? {
     val path = event.imagePath ?: return null
     val file = File(path)
     if (!file.exists()) return null
@@ -353,7 +379,21 @@ private suspend fun heroBitmap(context: Context, event: EventEntity, aspect: Flo
                 focal?.alignment?.verticalBias ?: 0f
             )
             if (cropped !== src) src.recycle()
-            addBottomScrim(cropped)
+            // 罩法二选一：两个罩函数都返回新位图，cropped 用完回收
+            val darkened = addBottomScrim(cropped)
+            val zoneLum = SmartCrop.bitmapRegionLuminance(
+                darkened,
+                HERO_ZONE_LEFT, HERO_ZONE_TOP, HERO_ZONE_RIGHT, HERO_ZONE_BOTTOM
+            )
+            if (zoneLum == null || zoneLum < HERO_TEXT_CROSSOVER) {
+                cropped.recycle()
+                HeroArtwork(darkened, darkText = false)
+            } else {
+                val lightened = addLightScrim(cropped)
+                darkened.recycle()
+                cropped.recycle()
+                HeroArtwork(lightened, darkText = true)
+            }
         }.getOrNull()
     }
 }
@@ -387,6 +427,24 @@ private fun addBottomScrim(src: Bitmap): Bitmap {
         0f, out.height.toFloat(),
         AndroidColor.TRANSPARENT,
         AndroidColor.argb(178, 0, 0, 0),
+        Shader.TileMode.CLAMP
+    )
+    canvas.drawRect(
+        0f, 0f, out.width.toFloat(), out.height.toFloat(),
+        Paint().apply { shader = gradient }
+    )
+    return out
+}
+
+/** 底部提亮渐变：压暗罩的镜像，上 30% 透明 → 底部约 75% 白，托住深色字 */
+private fun addLightScrim(src: Bitmap): Bitmap {
+    val out = src.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(out)
+    val gradient = LinearGradient(
+        0f, out.height * 0.30f,
+        0f, out.height.toFloat(),
+        AndroidColor.TRANSPARENT,
+        AndroidColor.argb(190, 255, 255, 255),
         Shader.TileMode.CLAMP
     )
     canvas.drawRect(
