@@ -69,9 +69,14 @@ class PrefsManager(context: Context) {
         return stored.takeIf { it > 0L }
     }
 
-    /** 保存主视觉组件的选事件；eventId 传 null 表示清掉配置、回落自动口径 */
+    /**
+     * 保存主视觉组件的选事件；eventId 传 null 表示清掉配置、回落自动口径。
+     * 用 commit() 同步落盘而不是 apply()：v4.1 用 apply() 时出过真机问题——配置界面
+     * 选完就关、进程随即被系统杀掉，异步磁盘写没来得及刷完，选择永久丢失，组件
+     * 每次渲染都只能读到空配置、永远回落默认事件。这里宁可阻塞几毫秒也要钉死。
+     */
     fun setHeroWidgetEventId(appWidgetId: Int, eventId: Long?) {
-        prefs.edit {
+        prefs.edit(commit = true) {
             if (eventId == null) remove(heroWidgetKey(appWidgetId))
             else putLong(heroWidgetKey(appWidgetId), eventId)
         }

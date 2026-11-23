@@ -2,8 +2,10 @@ package com.example.countdowndays.widget
 
 import android.app.Activity
 import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -119,17 +121,46 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
     private fun confirmSelection(appWidgetId: Int, eventId: Long?) {
         val container = (application as CountdownApp).container
         lifecycleScope.launch {
+            // setHeroWidgetEventId 内部是 commit() 同步落盘：先把选择钉死，
+            // 后面不管哪条刷新路径真正跑起来，provideGlance 读到的都是新选择
             container.prefs.setHeroWidgetEventId(appWidgetId, eventId)
-            runCatching {
-                HeroDaysWidget().update(
-                    this@HeroWidgetConfigureActivity, AppWidgetId(appWidgetId)
-                )
-            }
+            refreshHeroWidget(appWidgetId)
             setResult(
                 Activity.RESULT_OK,
                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             )
             finish()
+        }
+    }
+
+    /**
+     * 保存后主动刷新该组件实例。系统在配置流程（添加/改选）结束后不会再调
+     * onUpdate，这一次刷新只能靠应用自己，必须刷成功。
+     *
+     * v4.1 的教训：只靠 Glance 的 update() 一条路，还用 runCatching 把异常静默
+     * 吞掉——真机上选了事件却不生效、界面一直停在旧事件，且没有任何日志痕迹。
+     * v4.2 改双触发互为兜底，失败只记日志不再静默：
+     * 1) Glance update()：直接驱动该实例的会话重渲染（用 applicationContext，
+     *    不绑正在 finish 的 Activity）；
+     * 2) 给 Receiver 发一条系统同款的 ACTION_APPWIDGET_UPDATE 广播，走系统
+     *    更新组件的原路（Receiver → Glance 会话），与 1) 互不依赖。
+     * 两条都失败时还有每 30 分钟的周期更新兜底——配置已同步落盘，迟早会生效。
+     */
+    private suspend fun refreshHeroWidget(appWidgetId: Int) {
+        val appContext = applicationContext
+        runCatching {
+            HeroDaysWidget().update(appContext, AppWidgetId(appWidgetId))
+        }.onFailure {
+            Log.w("HeroWidgetCfg", "update() 刷新主视觉组件失败 id=$appWidgetId", it)
+        }
+        runCatching {
+            val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).apply {
+                component = ComponentName(appContext, HeroDaysWidgetReceiver::class.java)
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
+            }
+            appContext.sendBroadcast(intent)
+        }.onFailure {
+            Log.w("HeroWidgetCfg", "广播刷新主视觉组件失败 id=$appWidgetId", it)
         }
     }
 }

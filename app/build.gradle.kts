@@ -27,8 +27,8 @@ android {
         applicationId = "com.example.countdowndays"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "4.1"
+        versionCode = 35
+        versionName = "4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
