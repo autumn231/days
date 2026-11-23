@@ -139,6 +139,22 @@ fun EventCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    // 纪念日预告：已过去的一次性事件，下一个整百天/周年
+                    val anniversary = remember(event.id, event.date, event.repeatType) {
+                        if (!occ.isRepeating && (occ.daysToNext ?: 0L) < 0) {
+                            com.example.countdowndays.util.Anniversary.nextFor(event)
+                        } else null
+                    }
+                    if (anniversary != null) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "距离${anniversary.label}还有 ${anniversary.daysUntil} 天",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = accent,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     val repeat = event.repeatLabel()
                     if (repeat.isNotEmpty() || event.reminderEnabled) {
                         Spacer(Modifier.height(6.dp))

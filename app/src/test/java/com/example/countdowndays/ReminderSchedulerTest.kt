@@ -162,4 +162,52 @@ class ReminderSchedulerTest {
         val e = event(LocalDate.of(2020, 12, 19), repeatType = "YEARLY", advance = 30)
         assertEquals(at(LocalDate.of(2027, 11, 19), 9), trigger(e))
     }
+
+    // ---------- 多节点提醒（v3.23） ----------
+
+    @Test
+    fun multiParam_advanceAndTimeIndependent() {
+        // 事件字段是提前 0 天 9 点，但按另一条提醒的参数（提前 3 天、20 点）算触发
+        val e = event(today.plusDays(5), advance = 0, hour = 9)
+        val ts = ReminderScheduler.nextTriggerMillis(e, 3, 20, 30, today, nowAt(10))
+        assertEquals(
+            today.plusDays(2).atTime(20, 30)
+                .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            ts
+        )
+    }
+
+    @Test
+    fun specs_rowsWinOverLegacyFields() {
+        val e = event(today.plusDays(5)).copy(id = 42)
+        val rows = listOf(
+            com.example.countdowndays.data.ReminderEntity(
+                id = 7, eventId = 42, advanceDays = 7, hour = 8, minute = 0
+            ),
+            com.example.countdowndays.data.ReminderEntity(
+                id = 9, eventId = 42, advanceDays = 0, hour = 20, minute = 0
+            )
+        )
+        val specs = ReminderScheduler.specsFor(e, rows)
+        assertEquals(2, specs.size)
+        // 调度键就是提醒行 id，两条互不冲突
+        assertEquals(setOf(7L, 9L), specs.map { it.key }.toSet())
+        assertEquals(7, specs.first { it.key == 7L }.advanceDays)
+    }
+
+    @Test
+    fun specs_emptyRows_fallBackToLegacy() {
+        val e = event(today.plusDays(5), advance = 3, hour = 8).copy(id = 42)
+        val specs = ReminderScheduler.specsFor(e, emptyList())
+        assertEquals(1, specs.size)
+        assertEquals(-42L, specs.single().key)
+        assertEquals(3, specs.single().advanceDays)
+        assertEquals(8, specs.single().hour)
+    }
+
+    @Test
+    fun specs_disabled_noSpecs() {
+        val e = event(today.plusDays(5)).copy(reminderEnabled = false)
+        assertEquals(0, ReminderScheduler.specsFor(e, emptyList()).size)
+    }
 }

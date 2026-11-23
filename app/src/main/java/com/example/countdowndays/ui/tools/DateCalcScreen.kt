@@ -15,8 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,7 +23,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -128,26 +125,15 @@ fun DateCalcScreen(onBack: () -> Unit) {
 
     if (pickingStart != null) {
         val isStart = pickingStart == true
-        val state = rememberDatePickerState(
-            initialSelectedDateMillis = if (isStart) startMillis else endMillis
-        )
-        DatePickerDialog(
-            onDismissRequest = { pickingStart = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let {
-                        if (isStart) startMillis = DateUtils.startOfDay(it)
-                        else endMillis = DateUtils.startOfDay(it)
-                    }
-                    pickingStart = null
-                }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pickingStart = null }) { Text("取消") }
+        com.example.countdowndays.ui.common.HolidayDatePickerDialog(
+            initialDate = DateUtils.toLocalDate(if (isStart) startMillis else endMillis),
+            onDismiss = { pickingStart = null },
+            onConfirm = {
+                if (isStart) startMillis = DateUtils.toMillis(it)
+                else endMillis = DateUtils.toMillis(it)
+                pickingStart = null
             }
-        ) {
-            DatePicker(state = state)
-        }
+        )
     }
 }
 

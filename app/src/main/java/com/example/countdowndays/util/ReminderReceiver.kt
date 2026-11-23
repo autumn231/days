@@ -14,6 +14,9 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val eventId = intent.getLongExtra(ReminderScheduler.EXTRA_EVENT_ID, -1L)
         if (eventId <= 0L) return
+        // 哪条提醒触发的（多节点提醒各自成一条通知）；旧闹钟没有这个 extra
+        val reminderKey = intent.getLongExtra(ReminderScheduler.EXTRA_REMINDER_KEY, Long.MIN_VALUE)
+            .takeIf { it != Long.MIN_VALUE }
 
         val pending = goAsync()
         val app = context.applicationContext as? CountdownApp ?: run { pending.finish(); return }
@@ -21,7 +24,7 @@ class ReminderReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 app.container.repository.getEvent(eventId)?.let { ew ->
-                    ReminderScheduler.showNotification(context, ew.event)
+                    ReminderScheduler.showNotification(context, ew.event, reminderKey)
                 }
                 ReminderScheduler.rescheduleAll(context, app.container.repository)
             } finally {

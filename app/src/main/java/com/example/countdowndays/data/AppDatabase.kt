@@ -8,8 +8,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [EventEntity::class, TimelineNodeEntity::class, CategoryEntity::class],
-    version = 3,
+    entities = [
+        EventEntity::class, TimelineNodeEntity::class, CategoryEntity::class,
+        ReminderEntity::class
+    ],
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -59,6 +62,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 -> v4（v3.23）：
+         * 1) 时间线节点加文案与配图列；
+         * 2) 新建 reminders 表承载多节点提醒，并把旧的单提醒
+         *    （events 上的 reminderEnabled/AdvanceDays/Hour/Minute）
+         *    原样搬成每个已开启提醒事件的第一条记录，一条不丢。
+         *    events 上的旧列保留作镜像，不删。
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE timeline_nodes ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE timeline_nodes ADD COLUMN imagePath TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS reminders (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        eventId INTEGER NOT NULL,
+                        advanceDays INTEGER NOT NULL DEFAULT 0,
+                        hour INTEGER NOT NULL DEFAULT 9,
+                        minute INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(eventId) REFERENCES events(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_reminders_eventId ON reminders (eventId)"
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO reminders (eventId, advanceDays, hour, minute)
+                    SELECT id, reminderAdvanceDays, reminderHour, reminderMinute
+                    FROM events WHERE reminderEnabled = 1
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -66,7 +106,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "countdown.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     // 只在降级（装回旧版本）时清库；升级缺少迁移会直接抛错，便于开发期暴露问题
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()

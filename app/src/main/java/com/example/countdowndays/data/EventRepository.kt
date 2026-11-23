@@ -48,19 +48,28 @@ class EventRepository(
         notifyChanged()
     }
 
+    /** 删除前暂存的提醒快照（事件 id -> 提醒行），供撤销删除时原样写回 */
+    private val deletedReminders = mutableMapOf<Long, List<ReminderEntity>>()
+
     /**
      * 删除事件。这里先不删图片文件——列表支持「撤销删除」，
      * 立刻删文件会让撤销后变成白图。真正的清理在启动时按引用关系做（见 cleanupOrphanImages）。
+     * 提醒行会被外键级联删除，先在内存里留一份快照给撤销用（进程重启后快照丢失，
+     * 与「撤销」本身只在当次会话有效的语义一致）。
      */
     suspend fun deleteEvent(event: EventEntity) {
+        deletedReminders[event.id] = dao.getReminders(event.id)
         dao.deleteEvent(event)
         notifyChanged()
     }
 
-    /** 撤销删除：按原 id 写回事件与时间线节点 */
+    /** 撤销删除：按原 id 写回事件、时间线节点与提醒 */
     suspend fun restoreEvent(item: EventWithNodes) {
         dao.insertEvent(item.event)
         item.nodes.forEach { dao.insertNode(it) }
+        deletedReminders.remove(item.event.id)?.forEach {
+            dao.insertReminder(it.copy(id = 0, eventId = item.event.id))
+        }
         notifyChanged()
     }
 
@@ -80,6 +89,29 @@ class EventRepository(
 
     suspend fun deleteNode(node: TimelineNodeEntity) = dao.deleteNode(node)
 
+    // ---------- 提醒（多节点，v4） ----------
+    fun observeReminders(eventId: Long): Flow<List<ReminderEntity>> =
+        dao.observeReminders(eventId)
+
+    suspend fun getReminders(eventId: Long): List<ReminderEntity> = dao.getReminders(eventId)
+
+    suspend fun getAllReminders(): List<ReminderEntity> = dao.getAllReminders()
+
+    /** 整体替换某事件的提醒列表（一个事务里先删后插，中途失败不留半套） */
+    suspend fun setReminders(eventId: Long, reminders: List<ReminderEntity>) {
+        val rows = reminders.map { it.copy(id = 0, eventId = eventId) }
+        if (db != null) {
+            db.withTransaction {
+                dao.deleteRemindersForEvent(eventId)
+                rows.forEach { dao.insertReminder(it) }
+            }
+        } else {
+            dao.deleteRemindersForEvent(eventId)
+            rows.forEach { dao.insertReminder(it) }
+        }
+        notifyChanged()
+    }
+
     // ---------- 分类 ----------
     fun observeCategories(): Flow<List<CategoryEntity>> = categoryDao.observeAll()
 
@@ -93,9 +125,15 @@ class EventRepository(
     }
 
     // ---------- 图片清理 ----------
-    /** 删除不再被任何事件引用的图片（撤销删除留下的孤儿文件） */
+    /** 删除不再被引用的图片（撤销删除留下的孤儿文件）；事件配图与节点配图都要算引用 */
     suspend fun cleanupOrphanImages(context: android.content.Context) {
-        val referenced = dao.getAllEventsLight().mapNotNull { it.imagePath }.toSet()
+        val all = dao.getAllEvents()
+        val referenced = buildSet {
+            all.forEach { ew ->
+                ew.event.imagePath?.let { add(it) }
+                ew.nodes.forEach { node -> node.imagePath?.let { add(it) } }
+            }
+        }
         ImageStorage.cleanupOrphans(context, referenced)
     }
 

@@ -60,6 +60,19 @@
                 android:resource="@xml/days_widget_info" />
         </receiver>
 
+        <!-- 桌面小组件（主视觉款） -->
+        <receiver
+            android:name=".widget.HeroDaysWidgetReceiver"
+            android:exported="true"
+            android:label="倒数日 · 主视觉">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/days_hero_widget_info" />
+        </receiver>
+
         <!-- 分享展示卡片 -->
         <provider
             android:name="androidx.core.content.FileProvider"

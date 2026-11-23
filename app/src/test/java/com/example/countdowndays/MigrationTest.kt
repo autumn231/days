@@ -64,7 +64,7 @@ class MigrationTest {
         sqlite.close()
 
         val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .build()
         try {
             val events = runBlocking { db.eventDao().getAllEvents() }
@@ -80,6 +80,101 @@ class MigrationTest {
             // categories 表由迁移新建，此时应为空表可查
             val categories = runBlocking { db.categoryDao().getAll() }
             assertEquals(0, categories.size)
+            // 节点 v4 新列应带默认值
+            val node = events.single().nodes.single()
+            assertEquals("", node.note)
+            assertEquals(null, node.imagePath)
+        } finally {
+            db.close()
+            context.deleteDatabase(dbName)
+        }
+    }
+
+    /**
+     * v3 -> v4：按 v3 的完整表结构建库，塞入一个开了提醒的事件和一个没开的，
+     * 迁移后旧单提醒应原样变成 reminders 表里的第一条，没开的事件不应凭空多出提醒。
+     */
+    @Test
+    fun migrate3To4_movesLegacyReminder() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "migration-test-34.db"
+        context.deleteDatabase(dbName)
+
+        val sqlite = context.openOrCreateDatabase(dbName, Context.MODE_PRIVATE, null)
+        sqlite.execSQL(
+            "CREATE TABLE IF NOT EXISTS `events` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`description` TEXT NOT NULL, " +
+                "`date` INTEGER NOT NULL, " +
+                "`imagePath` TEXT, " +
+                "`is_pinned` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "`repeatType` TEXT NOT NULL DEFAULT 'NONE', " +
+                "`repeatEndDate` INTEGER, " +
+                "`isLunar` INTEGER NOT NULL DEFAULT 0, " +
+                "`lunarMonth` INTEGER NOT NULL DEFAULT 0, " +
+                "`lunarDay` INTEGER NOT NULL DEFAULT 0, " +
+                "`categoryId` INTEGER, " +
+                "`archived` INTEGER NOT NULL DEFAULT 0, " +
+                "`colorIndex` INTEGER NOT NULL DEFAULT 0, " +
+                "`sortOrder` INTEGER NOT NULL DEFAULT 0, " +
+                "`reminderEnabled` INTEGER NOT NULL DEFAULT 0, " +
+                "`reminderAdvanceDays` INTEGER NOT NULL DEFAULT 0, " +
+                "`reminderHour` INTEGER NOT NULL DEFAULT 9, " +
+                "`reminderMinute` INTEGER NOT NULL DEFAULT 0, " +
+                "`backgroundPreset` INTEGER NOT NULL DEFAULT 0)"
+        )
+        sqlite.execSQL(
+            "CREATE TABLE IF NOT EXISTS `timeline_nodes` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`eventId` INTEGER NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`time` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`eventId`) REFERENCES `events`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        sqlite.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_timeline_nodes_eventId` ON `timeline_nodes` (`eventId`)"
+        )
+        sqlite.execSQL(
+            "CREATE TABLE IF NOT EXISTS `categories` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`colorIndex` INTEGER NOT NULL DEFAULT 0, " +
+                "`sortOrder` INTEGER NOT NULL DEFAULT 0)"
+        )
+        // 事件 1：开了提醒（提前 7 天 08:30）；事件 2：没开
+        sqlite.execSQL(
+            "INSERT INTO events (name, description, date, imagePath, is_pinned, createdAt, " +
+                "reminderEnabled, reminderAdvanceDays, reminderHour, reminderMinute) " +
+                "VALUES ('有提醒', '', 1790000000000, NULL, 0, 1700000000000, 1, 7, 8, 30)"
+        )
+        sqlite.execSQL(
+            "INSERT INTO events (name, description, date, imagePath, is_pinned, createdAt, " +
+                "reminderEnabled, reminderAdvanceDays, reminderHour, reminderMinute) " +
+                "VALUES ('没提醒', '', 1790000000000, NULL, 0, 1700000000000, 0, 3, 9, 0)"
+        )
+        sqlite.version = 3
+        sqlite.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .build()
+        try {
+            val dao = db.eventDao()
+            val moved = runBlocking { dao.getReminders(1) }
+            assertEquals(1, moved.size)
+            assertEquals(7, moved.single().advanceDays)
+            assertEquals(8, moved.single().hour)
+            assertEquals(30, moved.single().minute)
+            // 没开提醒的事件不能凭空多出提醒行
+            assertEquals(0, runBlocking { dao.getReminders(2) }.size)
+            // 事件本体与旧字段镜像保持不变
+            val events = runBlocking { dao.getAllEvents() }
+            assertEquals(2, events.size)
+            assertEquals(7, events.first { it.event.id == 1L }.event.reminderAdvanceDays)
         } finally {
             db.close()
             context.deleteDatabase(dbName)

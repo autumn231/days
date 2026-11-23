@@ -20,6 +20,13 @@ class AddEditEventViewModel(
     private val repo: EventRepository
 ) : ViewModel() {
 
+    /** 编辑中的一条提醒（还没落库，不带 id） */
+    data class ReminderDraft(
+        val advanceDays: Int = 0,
+        val hour: Int = 9,
+        val minute: Int = 0
+    )
+
     data class State(
         val name: String = "",
         val description: String = "",
@@ -32,9 +39,8 @@ class AddEditEventViewModel(
         val categoryId: Long? = null,
         val colorIndex: Int = 0,
         val reminderEnabled: Boolean = false,
-        val reminderAdvanceDays: Int = 0,
-        val reminderHour: Int = 9,
-        val reminderMinute: Int = 0,
+        /** 多节点提醒（v3.23）；events 表上的单提醒字段保存时由第一条镜像生成 */
+        val reminders: List<ReminderDraft> = listOf(ReminderDraft()),
         val loaded: Boolean = true
     )
 
@@ -55,6 +61,17 @@ class AddEditEventViewModel(
             repo.observeEvent(eventId).first()?.let { ew ->
                 val e = ew.event
                 originalImagePath = e.imagePath
+                // 提醒以 reminders 表为准；表里没有（旧备份恢复等）时用事件上的旧字段兜底一条
+                val rows = repo.getReminders(eventId)
+                val drafts = when {
+                    rows.isNotEmpty() -> rows.map {
+                        ReminderDraft(it.advanceDays, it.hour, it.minute)
+                    }
+                    e.reminderEnabled -> listOf(
+                        ReminderDraft(e.reminderAdvanceDays, e.reminderHour, e.reminderMinute)
+                    )
+                    else -> listOf(ReminderDraft())
+                }
                 _state.value = State(
                     name = e.name,
                     description = e.description,
@@ -67,9 +84,7 @@ class AddEditEventViewModel(
                     categoryId = e.categoryId,
                     colorIndex = e.colorIndex,
                     reminderEnabled = e.reminderEnabled,
-                    reminderAdvanceDays = e.reminderAdvanceDays,
-                    reminderHour = e.reminderHour,
-                    reminderMinute = e.reminderMinute,
+                    reminders = drafts,
                     loaded = true
                 )
             } ?: run { _state.value = _state.value.copy(loaded = true) }
@@ -120,12 +135,34 @@ class AddEditEventViewModel(
         _state.value = _state.value.copy(reminderEnabled = enabled)
     }
 
-    fun setReminderAdvance(days: Int) {
-        _state.value = _state.value.copy(reminderAdvanceDays = days)
+    fun addReminder() {
+        val s = _state.value
+        if (s.reminders.size >= MAX_REMINDERS) return
+        _state.value = s.copy(reminders = s.reminders + ReminderDraft(advanceDays = 7))
     }
 
-    fun setReminderTime(hour: Int, minute: Int) {
-        _state.value = _state.value.copy(reminderHour = hour, reminderMinute = minute)
+    fun removeReminder(index: Int) {
+        val s = _state.value
+        if (s.reminders.size <= 1) return
+        _state.value = s.copy(reminders = s.reminders.filterIndexed { i, _ -> i != index })
+    }
+
+    fun setReminderAdvance(index: Int, days: Int) {
+        val s = _state.value
+        _state.value = s.copy(
+            reminders = s.reminders.mapIndexed { i, r ->
+                if (i == index) r.copy(advanceDays = days) else r
+            }
+        )
+    }
+
+    fun setReminderTime(index: Int, hour: Int, minute: Int) {
+        val s = _state.value
+        _state.value = s.copy(
+            reminders = s.reminders.mapIndexed { i, r ->
+                if (i == index) r.copy(hour = hour, minute = minute) else r
+            }
+        )
     }
 
     fun setImage(path: String) { _state.value = _state.value.copy(imagePath = path) }
@@ -144,6 +181,8 @@ class AddEditEventViewModel(
             val s = _state.value
             if (s.name.isBlank()) return@launch
 
+            // events 表上的旧单提醒字段 = 第一条提醒的镜像（备份/旧版兼容），事实以 reminders 表为准
+            val first = s.reminders.firstOrNull() ?: ReminderDraft()
             val base = EventEntity(
                 name = s.name.trim(),
                 description = s.description.trim(),
@@ -156,13 +195,14 @@ class AddEditEventViewModel(
                 categoryId = s.categoryId,
                 colorIndex = s.colorIndex,
                 reminderEnabled = s.reminderEnabled,
-                reminderAdvanceDays = s.reminderAdvanceDays,
-                reminderHour = s.reminderHour,
-                reminderMinute = s.reminderMinute
+                reminderAdvanceDays = first.advanceDays,
+                reminderHour = first.hour,
+                reminderMinute = first.minute
             )
 
+            val savedId: Long
             if (editingId == null) {
-                repo.addEvent(base)
+                savedId = repo.addEvent(base)
             } else {
                 val orig = repo.observeEvent(editingId!!).first()?.event ?: return@launch
                 if (originalImagePath != null && originalImagePath != s.imagePath) {
@@ -180,8 +220,25 @@ class AddEditEventViewModel(
                         backgroundPreset = orig.backgroundPreset
                     )
                 )
+                savedId = orig.id
             }
+            // 提醒列表整体落库（关掉总开关时也保留列表，重开即恢复；调度层按开关放行）
+            repo.setReminders(
+                savedId,
+                s.reminders.map {
+                    com.example.countdowndays.data.ReminderEntity(
+                        eventId = savedId,
+                        advanceDays = it.advanceDays,
+                        hour = it.hour,
+                        minute = it.minute
+                    )
+                }
+            )
             onDone()
         }
+    }
+
+    companion object {
+        const val MAX_REMINDERS = 5
     }
 }

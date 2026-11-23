@@ -101,6 +101,23 @@ interface EventDao {
 
     @Delete
     suspend fun deleteNode(node: TimelineNodeEntity)
+
+    // ---------- 提醒（多节点，v4） ----------
+
+    @Query("SELECT * FROM reminders WHERE eventId = :eventId ORDER BY advanceDays DESC, hour ASC, minute ASC")
+    fun observeReminders(eventId: Long): Flow<List<ReminderEntity>>
+
+    @Query("SELECT * FROM reminders WHERE eventId = :eventId ORDER BY advanceDays DESC, hour ASC, minute ASC")
+    suspend fun getReminders(eventId: Long): List<ReminderEntity>
+
+    @Query("SELECT * FROM reminders")
+    suspend fun getAllReminders(): List<ReminderEntity>
+
+    @Insert
+    suspend fun insertReminder(reminder: ReminderEntity): Long
+
+    @Query("DELETE FROM reminders WHERE eventId = :eventId")
+    suspend fun deleteRemindersForEvent(eventId: Long)
 }
 
 /** 时间线节点计数投影（配合 EventDao.observeNodeCounts） */

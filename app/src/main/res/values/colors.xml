@@ -8,4 +8,8 @@
     <color name="widget_text_main">#1F1B16</color>
     <color name="widget_text_dim">#8C8173</color>
     <color name="widget_accent">#E0612E</color>
+
+    <!-- 主视觉组件（照片底/彩色底 + 白字，两套外观下都用白） -->
+    <color name="widget_hero_text">#FFFFFFFF</color>
+    <color name="widget_hero_text_dim">#D9FFFFFF</color>
 </resources>

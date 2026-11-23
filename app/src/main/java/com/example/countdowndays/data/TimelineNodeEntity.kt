@@ -1,5 +1,6 @@
 package com.example.countdowndays.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -23,5 +24,10 @@ data class TimelineNodeEntity(
     val name: String,
     /** 节点时间，epoch 毫秒 */
     val time: Long,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    // ---------- v4 新增（默认值须与 MIGRATION_3_4 的 ALTER 完全一致） ----------
+    /** 文案（多行），空串表示没写 */
+    @ColumnInfo(defaultValue = "''") val note: String = "",
+    /** 配图在内部存储的绝对路径，可为空 */
+    val imagePath: String? = null
 )

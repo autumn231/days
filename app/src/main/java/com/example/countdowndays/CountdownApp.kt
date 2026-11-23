@@ -8,6 +8,7 @@ import com.example.countdowndays.util.PrefsManager
 import com.example.countdowndays.util.ReminderScheduler
 import androidx.glance.appwidget.updateAll
 import com.example.countdowndays.widget.DaysWidget
+import com.example.countdowndays.widget.HeroDaysWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +41,7 @@ class AppContainer(private val context: Context) {
             appScope.launch {
                 ReminderScheduler.rescheduleAll(context, repository)
                 runCatching { DaysWidget().updateAll(context) }
+                runCatching { HeroDaysWidget().updateAll(context) }
             }
         }
         appScope.launch {

@@ -76,6 +76,16 @@ object DateUtils {
 
     fun formatDateTime(millis: Long): String = dateTimeFmt.format(toLocalDateTime(millis))
 
+    /** 时间戳是否带具体时刻（不是当天 0 点整）——节点「只记日期」时为 false */
+    fun hasTimeOfDay(millis: Long): Boolean {
+        val dt = toLocalDateTime(millis)
+        return dt.hour != 0 || dt.minute != 0 || dt.second != 0
+    }
+
+    fun hourOf(millis: Long): Int = toLocalDateTime(millis).hour
+
+    fun minuteOf(millis: Long): Int = toLocalDateTime(millis).minute
+
     fun formatIso(localDate: LocalDate): String = localDate.format(isoFmt)
 
     fun weekdayCn(localDate: LocalDate): String =

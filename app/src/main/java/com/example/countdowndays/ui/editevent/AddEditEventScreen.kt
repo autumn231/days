@@ -31,13 +31,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +50,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -367,7 +367,7 @@ fun AddEditEventScreen(
                 }
             }
 
-            // ---------- 提醒 ----------
+            // ---------- 提醒（多节点：每条 = 提前天数 + 时刻，各自独立触发） ----------
             SectionLabel("提醒")
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -377,7 +377,9 @@ fun AddEditEventScreen(
                     Text("到日子提醒我", style = MaterialTheme.typography.bodyLarge)
                     Text(
                         text = if (state.reminderEnabled) {
-                            reminderSummary(state.reminderAdvanceDays, state.reminderHour, state.reminderMinute)
+                            state.reminders.joinToString(" · ") {
+                                reminderSummary(it.advanceDays, it.hour, it.minute)
+                            }
                         } else {
                             "开启后会发通知，需要允许通知权限"
                         },
@@ -400,46 +402,21 @@ fun AddEditEventScreen(
             }
 
             if (state.reminderEnabled) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(4) { index ->
-                        val advance = listOf(0, 1, 3, 7)[index]
-                        PillButton(
-                            text = if (advance == 0) "当天" else "提前 $advance 天",
-                            selected = state.reminderAdvanceDays == advance,
-                            onClick = { vm.setReminderAdvance(advance) }
-                        )
-                    }
+                state.reminders.forEachIndexed { index, draft ->
+                    ReminderRow(
+                        draft = draft,
+                        canDelete = state.reminders.size > 1,
+                        onAdvanceChange = { vm.setReminderAdvance(index, it) },
+                        onTimeChange = { h, m -> vm.setReminderTime(index, h, m) },
+                        onDelete = { vm.removeReminder(index) }
+                    )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedTextField(
-                        value = state.reminderHour.toString().padStart(2, '0'),
-                        onValueChange = { v ->
-                            v.filter { it.isDigit() }.toIntOrNull()?.let { h ->
-                                if (h in 0..23) vm.setReminderTime(h, state.reminderMinute)
-                            }
-                        },
-                        label = { Text("时") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                    OutlinedTextField(
-                        value = state.reminderMinute.toString().padStart(2, '0'),
-                        onValueChange = { v ->
-                            v.filter { it.isDigit() }.toIntOrNull()?.let { m ->
-                                if (m in 0..59) vm.setReminderTime(state.reminderHour, m)
-                            }
-                        },
-                        label = { Text("分") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp)
-                    )
+                if (state.reminders.size < AddEditEventViewModel.MAX_REMINDERS) {
+                    TextButton(onClick = { vm.addReminder() }) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("再加一条提醒")
+                    }
                 }
             }
 
@@ -459,26 +436,15 @@ fun AddEditEventScreen(
     }
 
     if (showDatePicker) {
-        // 选择器按 UTC 解释毫秒，进出都要换算，否则会差一天（见 DateUtils.toUtcMillis）
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = DateUtils.toUtcMillis(DateUtils.toLocalDate(state.dateMillis))
-        )
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDatePicker = false
-                    datePickerState.selectedDateMillis?.let {
-                        vm.setDate(DateUtils.toMillis(DateUtils.fromUtcMillis(it)))
-                    }
-                }) { Text("确定") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("取消") }
+        // 自研选择器带节假日/调休标注，且直接用 LocalDate 进出，没有 UTC 差一天的坑
+        com.example.countdowndays.ui.common.HolidayDatePickerDialog(
+            initialDate = DateUtils.toLocalDate(state.dateMillis),
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                vm.setDate(DateUtils.toMillis(it))
+                showDatePicker = false
             }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        )
     }
 
     if (showCategoryDialog) {
@@ -511,6 +477,94 @@ fun AddEditEventScreen(
 private fun reminderSummary(advanceDays: Int, hour: Int, minute: Int): String {
     val whenText = if (advanceDays == 0) "当天" else "提前 $advanceDays 天"
     return "$whenText ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
+}
+
+/** 提前天数选项（天） */
+private val ADVANCE_OPTIONS = listOf(0, 1, 2, 3, 5, 7, 14, 30)
+
+/** 一条提醒的编辑行：提前天数下拉 + 时刻（滚轮）+ 删除 */
+@Composable
+private fun ReminderRow(
+    draft: AddEditEventViewModel.ReminderDraft,
+    canDelete: Boolean,
+    onAdvanceChange: (Int) -> Unit,
+    onTimeChange: (Int, Int) -> Unit,
+    onDelete: () -> Unit
+) {
+    var advanceMenu by remember { mutableStateOf(false) }
+    var showTime by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Filled.Notifications,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+
+        Box {
+            TextButton(onClick = { advanceMenu = true }) {
+                Text(
+                    if (draft.advanceDays == 0) "当天"
+                    else "提前 ${draft.advanceDays} 天"
+                )
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            }
+            androidx.compose.material3.DropdownMenu(
+                expanded = advanceMenu,
+                onDismissRequest = { advanceMenu = false }
+            ) {
+                ADVANCE_OPTIONS.forEach { days ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(if (days == 0) "当天" else "提前 $days 天") },
+                        onClick = {
+                            advanceMenu = false
+                            onAdvanceChange(days)
+                        }
+                    )
+                }
+            }
+        }
+
+        TextButton(onClick = { showTime = true }) {
+            Text(
+                "${draft.hour.toString().padStart(2, '0')}:${draft.minute.toString().padStart(2, '0')}",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        if (canDelete) {
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "删除这条提醒",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    if (showTime) {
+        com.example.countdowndays.ui.common.WheelTimePickerDialog(
+            initialHour = draft.hour,
+            initialMinute = draft.minute,
+            onDismiss = { showTime = false },
+            onConfirm = { h, m ->
+                onTimeChange(h, m)
+                showTime = false
+            }
+        )
+    }
 }
 
 @Composable

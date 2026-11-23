@@ -25,17 +25,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -46,11 +47,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -75,7 +73,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.example.countdowndays.data.TimelineNodeEntity
+import com.example.countdowndays.ui.common.HolidayDatePickerDialog
+import com.example.countdowndays.ui.common.WheelTimePickerDialog
+import com.example.countdowndays.util.Anniversary
 import com.example.countdowndays.util.DateUtils
+import com.example.countdowndays.util.ImageStorage
 import java.io.File
 import java.util.Calendar
 
@@ -154,6 +156,43 @@ fun EventDetailScreen(
                 onImageClick = { fullImagePath = event.imagePath }
             )
 
+            // 纪念日预告：已过去的一次性事件，推导下一个整百天/周年
+            Anniversary.nextFor(event)?.let { info ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Cake,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "距离${info.label}还有 ${info.daysUntil} 天",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "${DateUtils.formatDate(DateUtils.toMillis(info.date))} · 已经走过 ${info.elapsedDays} 天",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
             if (event.description.isNotBlank()) {
                 Surface(
                     modifier = Modifier
@@ -173,6 +212,7 @@ fun EventDetailScreen(
             TimelineSection(
                 nodes = ew.nodes.sortedBy { it.time },
                 onAddNode = vm::addNode,
+                onUpdateNode = vm::updateNode,
                 onDelete = vm::deleteNode
             )
             Spacer(Modifier.height(24.dp))
@@ -306,14 +346,15 @@ private fun HeaderInfo(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimelineSection(
     nodes: List<TimelineNodeEntity>,
-    onAddNode: (String, Long) -> Unit,
+    onAddNode: (String, Long, String, String?) -> Unit,
+    onUpdateNode: (TimelineNodeEntity) -> Unit,
     onDelete: (TimelineNodeEntity) -> Unit
 ) {
     var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<TimelineNodeEntity?>(null) }
 
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -351,6 +392,7 @@ private fun TimelineSection(
                         node = node,
                         isFirst = index == 0,
                         isLast = index == nodes.lastIndex,
+                        onEdit = { editing = node },
                         onDelete = { onDelete(node) }
                     )
                 }
@@ -359,11 +401,30 @@ private fun TimelineSection(
     }
 
     if (showAdd) {
-        AddNodeDialog(
+        NodeEditorDialog(
+            initial = null,
             onDismiss = { showAdd = false },
-            onConfirm = { name, time ->
-                onAddNode(name, time)
+            onConfirm = { name, time, note, imagePath ->
+                onAddNode(name, time, note, imagePath)
                 showAdd = false
+            },
+            onDelete = null
+        )
+    }
+
+    editing?.let { node ->
+        NodeEditorDialog(
+            initial = node,
+            onDismiss = { editing = null },
+            onConfirm = { name, time, note, imagePath ->
+                onUpdateNode(
+                    node.copy(name = name, time = time, note = note, imagePath = imagePath)
+                )
+                editing = null
+            },
+            onDelete = {
+                onDelete(node)
+                editing = null
             }
         )
     }
@@ -374,6 +435,7 @@ private fun TimelineRow(
     node: TimelineNodeEntity,
     isFirst: Boolean,
     isLast: Boolean,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val lineColor = MaterialTheme.colorScheme.outlineVariant
@@ -426,43 +488,72 @@ private fun TimelineRow(
             }
         }
 
-        // 右侧内容卡片
+        // 右侧内容卡片：点开可编辑（名称/文案/配图/时间）
         Surface(
+            onClick = onEdit,
             modifier = Modifier
                 .weight(1f)
                 .padding(start = 4.dp, bottom = 12.dp),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Filled.Schedule,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        node.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Schedule,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        DateUtils.formatDateTime(node.time),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            node.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            // 只记日期的节点（时间为 0 点整）不显示时间
+                            if (DateUtils.hasTimeOfDay(node.time)) {
+                                DateUtils.formatDateTime(node.time)
+                            } else {
+                                DateUtils.formatDate(node.time)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "删除节点",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // 配图：整宽展示，圆角裁切
+                if (!node.imagePath.isNullOrEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Image(
+                        painter = rememberAsyncImagePainter(remember(node.imagePath) { File(node.imagePath!!) }),
+                        contentDescription = "节点配图",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(150.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
                     )
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除节点",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+
+                // 文案
+                if (node.note.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = node.note,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -470,30 +561,61 @@ private fun TimelineRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 时间线节点编辑器（新增与编辑共用，v3.23）：
+ * 名称 + 文案（多行）+ 配图（相册选图走 ImageStorage 既有管线）+ 日期/时间。
+ * 时间默认只记日期，打开「具体时间」开关后用滚轮选择——
+ * 不再用 Material3 的时间输入框（数字会被裁切，用户截图实证）。
+ */
 @Composable
-private fun AddNodeDialog(
+private fun NodeEditorDialog(
+    initial: TimelineNodeEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (String, Long) -> Unit
+    onConfirm: (name: String, time: Long, note: String, imagePath: String?) -> Unit,
+    onDelete: (() -> Unit)?
 ) {
-    var name by remember { mutableStateOf("") }
-    var dateMillis by remember { mutableLongStateOf(DateUtils.todayMillis()) }
-    var hour by remember { mutableStateOf(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) }
-    var minute by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MINUTE)) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
+    var imagePath by remember { mutableStateOf(initial?.imagePath) }
+    var dateMillis by remember {
+        mutableLongStateOf(initial?.time?.let { DateUtils.startOfDay(it) } ?: DateUtils.todayMillis())
+    }
+    val initialHasTime = initial != null && DateUtils.hasTimeOfDay(initial.time)
+    var hasTime by remember { mutableStateOf(initialHasTime) }
+    var hour by remember {
+        mutableStateOf(
+            initial?.let { DateUtils.hourOf(it.time) }
+                ?: Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        )
+    }
+    var minute by remember {
+        mutableStateOf(
+            initial?.let { DateUtils.minuteOf(it.time) }
+                ?: Calendar.getInstance().get(Calendar.MINUTE)
+        )
+    }
     var showDate by remember { mutableStateOf(false) }
     var showTime by remember { mutableStateOf(false) }
 
-    // 选择器按 UTC 解释毫秒，进出都要换算，否则会差一天（见 DateUtils.toUtcMillis）
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = DateUtils.toUtcMillis(DateUtils.toLocalDate(dateMillis))
-    )
-    val timePickerState = rememberTimePickerState(initialHour = hour, initialMinute = minute)
+    // 选图：复用事件配图同一条管线（拷入私有目录、长边 1920 压缩）
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            ImageStorage.saveFromUri(context, uri, "node")
+                ?.let { imagePath = it }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加时间线节点") },
+        title = { Text(if (initial == null) "添加时间线节点" else "编辑时间线节点") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -502,6 +624,68 @@ private fun AddNodeDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("文案（可选）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    minLines = 2,
+                    maxLines = 4
+                )
+
+                // 配图
+                if (!imagePath.isNullOrEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    ) {
+                        Image(
+                            painter = rememberAsyncImagePainter(remember(imagePath) { File(imagePath!!) }),
+                            contentDescription = "节点配图",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        IconButton(
+                            onClick = { imagePath = null },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.45f))
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "移除配图",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                } else {
+                    FilledTonalButton(
+                        onClick = {
+                            imagePicker.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Outlined.AddPhotoAlternate,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("添加配图（可选）")
+                    }
+                }
+
                 FilledTonalButton(
                     onClick = { showDate = true },
                     modifier = Modifier.fillMaxWidth()
@@ -510,13 +694,30 @@ private fun AddNodeDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(DateUtils.formatDate(dateMillis))
                 }
-                FilledTonalButton(
-                    onClick = { showTime = true },
-                    modifier = Modifier.fillMaxWidth()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Filled.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("%02d:%02d".format(hour, minute))
+                    Text(
+                        "具体时间",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = hasTime,
+                        onCheckedChange = { hasTime = it }
+                    )
+                }
+                if (hasTime) {
+                    FilledTonalButton(
+                        onClick = { showTime = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("%02d:%02d".format(hour, minute))
+                    }
                 }
             }
         },
@@ -524,42 +725,45 @@ private fun AddNodeDialog(
             TextButton(
                 onClick = {
                     val combined = DateUtils.startOfDay(dateMillis) +
-                        (hour * 3600L + minute * 60L) * 1000L
-                    onConfirm(name, combined)
+                        if (hasTime) (hour * 3600L + minute * 60L) * 1000L else 0L
+                    onConfirm(name.trim(), combined, note, imagePath)
                 },
                 enabled = name.isNotBlank()
-            ) { Text("添加") }
+            ) { Text(if (initial == null) "添加" else "保存") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = {
+            Row {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        }
     )
 
     if (showDate) {
-        DatePickerDialog(
-            onDismissRequest = { showDate = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDate = false
-                    datePickerState.selectedDateMillis?.let {
-                        dateMillis = DateUtils.toMillis(DateUtils.fromUtcMillis(it))
-                    }
-                }) { Text("确定") }
-            },
-            dismissButton = { TextButton(onClick = { showDate = false }) { Text("取消") } }
-        ) { DatePicker(state = datePickerState) }
+        HolidayDatePickerDialog(
+            initialDate = DateUtils.toLocalDate(dateMillis),
+            onDismiss = { showDate = false },
+            onConfirm = {
+                dateMillis = DateUtils.toMillis(it)
+                showDate = false
+            }
+        )
     }
 
     if (showTime) {
-        AlertDialog(
-            onDismissRequest = { showTime = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    showTime = false
-                    hour = timePickerState.hour
-                    minute = timePickerState.minute
-                }) { Text("确定") }
-            },
-            dismissButton = { TextButton(onClick = { showTime = false }) { Text("取消") } },
-            text = { TimePicker(state = timePickerState) }
+        WheelTimePickerDialog(
+            initialHour = hour,
+            initialMinute = minute,
+            onDismiss = { showTime = false },
+            onConfirm = { h, m ->
+                hour = h
+                minute = m
+                showTime = false
+            }
         )
     }
 }

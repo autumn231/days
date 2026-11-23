@@ -33,16 +33,32 @@ class EventDetailViewModel(
         }
     }
 
-    fun addNode(name: String, time: Long) {
+    fun addNode(name: String, time: Long, note: String, imagePath: String?) {
         val id = _event.value?.event?.id ?: return
         if (name.isBlank()) return
         viewModelScope.launch {
-            repo.addNode(TimelineNodeEntity(eventId = id, name = name.trim(), time = time))
+            repo.addNode(
+                TimelineNodeEntity(
+                    eventId = id,
+                    name = name.trim(),
+                    time = time,
+                    note = note.trim(),
+                    imagePath = imagePath
+                )
+            )
         }
     }
 
+    fun updateNode(node: TimelineNodeEntity) {
+        viewModelScope.launch { repo.updateNode(node) }
+    }
+
     fun deleteNode(node: TimelineNodeEntity) {
-        viewModelScope.launch { repo.deleteNode(node) }
+        viewModelScope.launch {
+            // 节点没有撤销机制，删行时把配图文件一并清掉，避免孤儿文件越攒越多
+            ImageStorage.delete(node.imagePath)
+            repo.deleteNode(node)
+        }
     }
 
     fun deleteEvent(onDone: () -> Unit) {
