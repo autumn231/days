@@ -48,6 +48,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.countdowndays.R
 
+private const val AUTHOR_URL = "https://github.com/autumn231"
+private const val AUTHOR_DISPLAY = "autumn231"
 private const val REPO_URL = "https://github.com/autumn231/days"
 private const val REPO_DISPLAY = "github.com/autumn231/days"
 private const val LICENSE_NAME = "MIT License"
@@ -145,7 +147,8 @@ fun AboutScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.size(16.dp))
 
-            // 作者与开源信息卡片（v4.0：移除联系方式，加仓库地址与开源许可）
+            // 作者与开源信息卡片（v4.0：移除联系方式，加仓库地址与开源许可；
+            // v4.1：作者行改 GitHub 账号 autumn231，点击跳个人主页）
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -155,7 +158,14 @@ fun AboutScreen(onBack: () -> Unit) {
                     InfoRow(
                         icon = Icons.Filled.Person,
                         label = "作者",
-                        value = "高翔"
+                        value = AUTHOR_DISPLAY,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(AUTHOR_URL))
+                                )
+                            }
+                        }
                     )
                     InfoRow(
                         icon = Icons.Filled.Code,

@@ -73,6 +73,17 @@
                 android:resource="@xml/days_hero_widget_info" />
         </receiver>
 
+        <!-- 主视觉组件的选事件配置界面（添加组件时拉起，支持 reconfigure 的启动器可重进改选） -->
+        <activity
+            android:name=".widget.HeroWidgetConfigureActivity"
+            android:exported="true"
+            android:label="选择日子"
+            android:theme="@style/Theme.CountdownDays">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- 分享展示卡片 -->
         <provider
             android:name="androidx.core.content.FileProvider"

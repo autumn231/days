@@ -61,6 +61,24 @@ class PrefsManager(context: Context) {
             _cardStyle.value = value
         }
 
+    // ---------- 主视觉组件的选事件配置（按 appWidgetId 分开存） ----------
+
+    /** 某个主视觉组件实例选中的事件 id；没配置过（或选了「自动」）返回 null */
+    fun heroWidgetEventId(appWidgetId: Int): Long? {
+        val stored = prefs.getLong(heroWidgetKey(appWidgetId), -1L)
+        return stored.takeIf { it > 0L }
+    }
+
+    /** 保存主视觉组件的选事件；eventId 传 null 表示清掉配置、回落自动口径 */
+    fun setHeroWidgetEventId(appWidgetId: Int, eventId: Long?) {
+        prefs.edit {
+            if (eventId == null) remove(heroWidgetKey(appWidgetId))
+            else putLong(heroWidgetKey(appWidgetId), eventId)
+        }
+    }
+
+    private fun heroWidgetKey(appWidgetId: Int) = "hero_widget_event_$appWidgetId"
+
     private fun loadCardStyle(): CardStyle =
         runCatching {
             CardStyle.valueOf(prefs.getString(KEY_CARD_STYLE, CardStyle.PAPER.name)!!)

@@ -1,5 +1,6 @@
 package com.example.countdowndays.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -16,6 +17,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.action.actionStartActivity
@@ -173,15 +175,26 @@ class DaysWidgetReceiver : GlanceAppWidgetReceiver() {
  * 设计语言与 App 内展示页统一——事件配图作背景（按智能裁切焦点裁切）、
  * 衬线大数字。罩法与字色按背景实测亮度自适应（v4.0）：深底用底部压暗罩＋白字，
  * 浅底改浅色提亮罩＋深色字；无配图时用事件强调色纯色底，字色同样按底色亮度选。
- * 选事件口径：置顶优先，其次最近的将来事件，再其次最近的过去事件。
+ * 选事件口径（v4.1 起可配置）：添加组件时在配置界面选事件、按 appWidgetId 存偏好，
+ * 长按组件（启动器支持时）可重新选。渲染时先用配置的事件；没配置过、或所选事件
+ * 已被删除/归档（活跃列表里找不到）时回落到最近的未来事件（今天算未来侧），
+ * 一个未来事件都没有时再走 pickHero（置顶优先、最近的过去事件）。
  */
 class HeroDaysWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as CountdownApp
+        val appWidgetId = runCatching {
+            GlanceAppWidgetManager(context).getAppWidgetId(id)
+        }.getOrDefault(AppWidgetManager.INVALID_APPWIDGET_ID)
+        val configuredId = if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            app.container.prefs.heroWidgetEventId(appWidgetId)
+        } else {
+            null
+        }
         val hero = runCatching {
             val events = app.container.repository.getActiveEventsLight()
-            pickHero(events.map { it to it.occurrence() })
+            resolveHero(configuredId, events.map { it to it.occurrence() })
         }.getOrNull()
 
         val artwork = if (hero != null) {
@@ -326,11 +339,39 @@ class HeroDaysWidget : GlanceAppWidget() {
                     )
                 )
                 .firstOrNull()
+
+        /**
+         * 主视觉最终选事件（纯函数，可单测）：
+         * 1) 配置过且该事件还在活跃列表里（未删除、未归档）→ 用它；
+         * 2) 否则回落最近的未来事件（daysToNext >= 0，今天在内，取最小）；
+         * 3) 一个未来事件都没有 → pickHero（置顶优先、最近的过去事件）。
+         * rows 只含未归档事件，所以「所选被归档」与「被删除」都自然落到第 2 步。
+         */
+        internal fun resolveHero(
+            configuredId: Long?,
+            rows: List<Pair<EventEntity, EventOccurrence>>
+        ): Pair<EventEntity, EventOccurrence>? {
+            if (configuredId != null) {
+                rows.firstOrNull { it.first.id == configuredId }?.let { return it }
+            }
+            val nearestFuture = rows
+                .filter { (it.second.daysToNext ?: Long.MIN_VALUE) >= 0L }
+                .minByOrNull { it.second.daysToNext ?: Long.MAX_VALUE }
+            if (nearestFuture != null) return nearestFuture
+            return pickHero(rows)
+        }
     }
 }
 
 class HeroDaysWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HeroDaysWidget()
+
+    /** 组件被删时清掉它那份选事件配置，别在偏好里留孤儿记录 */
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        val prefs = (context.applicationContext as CountdownApp).container.prefs
+        appWidgetIds.forEach { prefs.setHeroWidgetEventId(it, null) }
+    }
 }
 
 /** 主视觉文字区（左下）在成品图上的分数范围：名称/大数字/日期/预告四行都落在这里 */
