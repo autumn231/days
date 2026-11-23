@@ -147,6 +147,92 @@ class PrefsManager(context: Context) {
         return removed
     }
 
+    // ---------- 组件诊断留痕（v4.5.2 诊断版：只记录，不参与任何决策） ----------
+    //
+    // v4.5.1 的选事件逻辑在用户真机（HyperOS）上仍不跟随，云真机与单测都
+    // 复现不出，靠猜已连错四版。本版只加仪表：配置界面收到的 id、最近一次
+    // 保存的完整入参、最近一次渲染的解析全过程，各留一份痕在偏好里，诊断
+    // 页（HeroDiagnostics）连同存储全量与系统枚举一起 dump 出来，用户复制
+    // 粘贴即可取证。本节键全部 diag_ 前缀，不被任何生产决策读取；记录动作
+    // 本身幂等无副作用，失败也不影响组件行为（关键调用点另有 runCatching）。
+
+    /** 配置界面最近一次打开时，从 intent 里收到的 appWidgetId 留痕 */
+    data class HeroConfigureOpenTrace(val appWidgetId: Int, val atMillis: Long)
+
+    /**
+     * 最近一次 saveHeroSelection 的完整入参留痕：保存用的 id、所选事件
+     * （null＝选了「自动」）、保存瞬间枚举到的放置实例列表、规范槽到底写
+     * 没写（没写时 [canonicalNote] 记下卡住的分支条件）、本次修剪掉的
+     * 残留键 id 集合。
+     */
+    data class HeroSaveTrace(
+        val appWidgetId: Int,
+        val eventId: Long?,
+        val placedIds: List<Int>,
+        val canonicalWritten: Boolean,
+        val canonicalNote: String,
+        val prunedIds: Set<Int>,
+        val atMillis: Long
+    )
+
+    /** 最近一次渲染的解析留痕：与 HeroWidgetRender 日志同字段的整行文本＋时间 */
+    data class HeroRenderTrace(val text: String, val atMillis: Long)
+
+    fun recordHeroConfigureOpen(appWidgetId: Int) {
+        prefs.edit {
+            putInt(KEY_DIAG_CFG_OPEN_ID, appWidgetId)
+            putLong(KEY_DIAG_CFG_OPEN_AT, System.currentTimeMillis())
+        }
+    }
+
+    fun heroConfigureOpenTrace(): HeroConfigureOpenTrace? {
+        if (!prefs.contains(KEY_DIAG_CFG_OPEN_AT)) return null
+        return HeroConfigureOpenTrace(
+            appWidgetId = prefs.getInt(KEY_DIAG_CFG_OPEN_ID, -1),
+            atMillis = prefs.getLong(KEY_DIAG_CFG_OPEN_AT, 0L)
+        )
+    }
+
+    fun recordHeroSaveTrace(trace: HeroSaveTrace) {
+        prefs.edit(commit = true) {
+            putInt(KEY_DIAG_SAVE_ID, trace.appWidgetId)
+            putLong(KEY_DIAG_SAVE_EVENT, trace.eventId ?: -1L)
+            putString(KEY_DIAG_SAVE_PLACED, trace.placedIds.joinToString(","))
+            putBoolean(KEY_DIAG_SAVE_CANONICAL_WRITTEN, trace.canonicalWritten)
+            putString(KEY_DIAG_SAVE_CANONICAL_NOTE, trace.canonicalNote)
+            putString(KEY_DIAG_SAVE_PRUNED, trace.prunedIds.joinToString(","))
+            putLong(KEY_DIAG_SAVE_AT, trace.atMillis)
+        }
+    }
+
+    fun heroSaveTrace(): HeroSaveTrace? {
+        if (!prefs.contains(KEY_DIAG_SAVE_AT)) return null
+        fun parseIds(raw: String?): List<Int> =
+            raw?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
+        val rawEvent = prefs.getLong(KEY_DIAG_SAVE_EVENT, -1L)
+        return HeroSaveTrace(
+            appWidgetId = prefs.getInt(KEY_DIAG_SAVE_ID, -1),
+            eventId = rawEvent.takeIf { it > 0L },
+            placedIds = parseIds(prefs.getString(KEY_DIAG_SAVE_PLACED, "")),
+            canonicalWritten = prefs.getBoolean(KEY_DIAG_SAVE_CANONICAL_WRITTEN, false),
+            canonicalNote = prefs.getString(KEY_DIAG_SAVE_CANONICAL_NOTE, "") ?: "",
+            prunedIds = parseIds(prefs.getString(KEY_DIAG_SAVE_PRUNED, "")).toSet(),
+            atMillis = prefs.getLong(KEY_DIAG_SAVE_AT, 0L)
+        )
+    }
+
+    fun recordHeroRenderTrace(text: String) {
+        prefs.edit {
+            putString(KEY_DIAG_RENDER_TEXT, text)
+            putLong(KEY_DIAG_RENDER_AT, System.currentTimeMillis())
+        }
+    }
+
+    fun heroRenderTrace(): HeroRenderTrace? {
+        val text = prefs.getString(KEY_DIAG_RENDER_TEXT, null) ?: return null
+        return HeroRenderTrace(text, prefs.getLong(KEY_DIAG_RENDER_AT, 0L))
+    }
+
     private fun loadCardStyle(): CardStyle =
         runCatching {
             CardStyle.valueOf(prefs.getString(KEY_CARD_STYLE, CardStyle.PAPER.name)!!)
@@ -166,6 +252,17 @@ class PrefsManager(context: Context) {
         private const val HERO_KEY_PREFIX = "hero_widget_event_"
         private const val KEY_HERO_CANONICAL_EVENT = "hero_widget_canonical_event"
         private const val KEY_HERO_CANONICAL_AT = "hero_widget_canonical_at"
+        private const val KEY_DIAG_CFG_OPEN_ID = "diag_cfg_open_id"
+        private const val KEY_DIAG_CFG_OPEN_AT = "diag_cfg_open_at"
+        private const val KEY_DIAG_SAVE_ID = "diag_save_id"
+        private const val KEY_DIAG_SAVE_EVENT = "diag_save_event"
+        private const val KEY_DIAG_SAVE_PLACED = "diag_save_placed"
+        private const val KEY_DIAG_SAVE_CANONICAL_WRITTEN = "diag_save_canonical_written"
+        private const val KEY_DIAG_SAVE_CANONICAL_NOTE = "diag_save_canonical_note"
+        private const val KEY_DIAG_SAVE_PRUNED = "diag_save_pruned"
+        private const val KEY_DIAG_SAVE_AT = "diag_save_at"
+        private const val KEY_DIAG_RENDER_TEXT = "diag_render_text"
+        private const val KEY_DIAG_RENDER_AT = "diag_render_at"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_DYNAMIC = "dynamic_color"
         private const val KEY_SORT = "sort_mode"

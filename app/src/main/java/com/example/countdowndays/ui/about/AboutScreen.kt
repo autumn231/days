@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Person
@@ -81,7 +82,7 @@ SOFTWARE.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(onBack: () -> Unit, onOpenDiagnostics: () -> Unit = {}) {
     val context = LocalContext.current
     val version = remember {
         runCatching {
@@ -184,6 +185,12 @@ fun AboutScreen(onBack: () -> Unit) {
                         label = "开源许可",
                         value = LICENSE_NAME,
                         onClick = { showLicense = true }
+                    )
+                    InfoRow(
+                        icon = Icons.Filled.BugReport,
+                        label = "组件诊断",
+                        value = "小部件不跟随所选事件时，点这里生成诊断信息",
+                        onClick = onOpenDiagnostics
                     )
                 }
             }

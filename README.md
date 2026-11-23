@@ -120,7 +120,7 @@ keyPassword=******
 
 ## 下载
 
-最新版本（v4.5.1）请前往 [Releases](https://github.com/autumn231/days/releases) 页面下载 APK 安装。
+最新版本（v4.5.2）请前往 [Releases](https://github.com/autumn231/days/releases) 页面下载 APK 安装。
 
 ## 关于
 

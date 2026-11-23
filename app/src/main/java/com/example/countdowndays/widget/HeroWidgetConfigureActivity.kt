@@ -92,6 +92,9 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 
         val container = (application as CountdownApp).container
         val prefs = container.prefs
+        // v4.5.2 诊断留痕：记下本界面这次打开收到的 appWidgetId，诊断页
+        // dump 时与渲染侧、系统枚举三方对照。只记录，不影响任何行为。
+        runCatching { prefs.recordHeroConfigureOpen(appWidgetId) }
         val placedIds = placedHeroWidgetIds()
         // ✓ 判定与渲染同源（v4.5.1）：走 HeroDaysWidget.resolveConfiguredEventId
         // 同一解析入口，不再只读本界面 id 名下的键——旧口径下出现过「✓ 在 A
@@ -107,6 +110,15 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
                 "已放置实例=$placedIds"
         )
 
+        // v4.5.2 诊断结论行的数据：用与渲染相同的入参口径再算一份结论——
+        // 单实例时渲染的主键是系统登记的放置 id，不是本界面收到的 id。
+        // ✓ 判定仍用上面的 currentSelection（配置侧 id 口径，行为不变）；
+        // 结论行回答的是「组件实际会显示什么」，两个口径并存是有意的，
+        // 对照着看才能分清断点在解析侧还是刷新侧。
+        val renderPrimaryId = if (placedIds.size == 1) placedIds.single() else appWidgetId
+        val widgetConclusionId =
+            HeroDaysWidget.resolveConfiguredEventId(prefs, renderPrimaryId, placedIds)
+
         setContent {
             val mode by prefs.themeMode.collectAsStateWithLifecycle()
             val dynamic by prefs.dynamicColor.collectAsStateWithLifecycle()
@@ -119,6 +131,9 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
             CountdownTheme(darkTheme = darkTheme, dynamicColor = dynamic) {
                 HeroWidgetConfigureScreen(
                     currentEventId = currentSelection,
+                    conclusionEventId = widgetConclusionId,
+                    canonicalEventId = prefs.heroCanonicalSelection(),
+                    placedCount = placedIds.size,
                     loadEvents = { container.repository.getActiveEventsLight() },
                     onPick = { eventId -> confirmSelection(appWidgetId, eventId) },
                     onOpenApp = {
@@ -207,6 +222,9 @@ class HeroWidgetConfigureActivity : ComponentActivity() {
 @Composable
 private fun HeroWidgetConfigureScreen(
     currentEventId: Long?,
+    conclusionEventId: Long?,
+    canonicalEventId: Long?,
+    placedCount: Int,
     loadEvents: suspend () -> List<EventEntity>,
     onPick: (Long?) -> Unit,
     onOpenApp: () -> Unit,
@@ -245,16 +263,21 @@ private fun HeroWidgetConfigureScreen(
         }
     ) { padding ->
         val list = rows
-        when {
-            list == null -> Box(Modifier.fillMaxSize().padding(padding))
-            list.isEmpty() -> Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            Box(Modifier.weight(1f)) {
+                when {
+                    list == null -> Box(Modifier.fillMaxSize())
+                    list.isEmpty() -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
                 Text(
                     text = "还没有记录的日子",
                     style = MaterialTheme.typography.titleMedium,
@@ -269,13 +292,12 @@ private fun HeroWidgetConfigureScreen(
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onOpenApp) { Text("打开倒数日") }
             }
-            else -> LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+                    else -> LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                 item {
                     ConfigureRow(
                         title = "自动",
@@ -304,7 +326,29 @@ private fun HeroWidgetConfigureScreen(
                         onClick = { onPick(event.id) }
                     )
                 }
+                    }
+                }
             }
+            // v4.5.2 诊断结论行：结论由 Activity 用与渲染相同的解析函数＋
+            // 相同入参口径（放置 id 优先）算好后传进来，这里只负责展示。
+            // 结论与组件实际显示不一致 → 断点在刷新送达侧；一致但与所选
+            // 不同 → 断点在解析/存储侧。一张截图即可分清，全量证据见
+            // 关于页的「组件诊断」
+            val nameOf = { id: Long ->
+                list?.firstOrNull { it.first.id == id }?.first?.name ?: "事件#$id"
+            }
+            Text(
+                text = "组件将显示：" +
+                    (conclusionEventId?.let { nameOf(it) } ?: "自动（最近的日子）") +
+                    "（依据：规范槽＝" +
+                    (canonicalEventId?.let { nameOf(it) } ?: "空") +
+                    "，放置实例数＝$placedCount）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
         }
     }
 }
